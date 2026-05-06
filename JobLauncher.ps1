@@ -138,16 +138,43 @@ function Write-LogFile {
         $jsonLogDir = $script:Settings.logs_directory
     }
 
-    $logRoot = if ($jsonLogDir) {
-        $jsonLogDir
-    } else {
-        $DefaultLogsDirectory
+    # Define candidate log directories in priority order
+    $candidates = @(
+        $jsonLogDir,                    # User's JSON setting (may be $null)
+        $DefaultLogsDirectory,          # Script default (relative to script)
+        (Join-Path -Path $env:TEMP -ChildPath "JobLauncherLogs")  # Ultimate fallback
+    )
+
+    $logRoot = $null
+    $lastError = $null
+
+    foreach ($candidate in $candidates) {
+        if (-not $candidate) { continue }  # Skip empty candidates
+
+        try {
+            if (-not (Test-Path -Path $candidate)) {
+                New-Item -Path $candidate -ItemType Directory -Force | Out-Null
+            }
+            # If we get here, success
+            $logRoot = $candidate
+            break
+        } catch {
+            $lastError = $_
+            Write-Host "DEBUG: Error trying to create logdir! Will proceed to next candidate. Errored dir: $logRoot"
+            Write-OutputWithTimestamp "Warning: Cannot use '$candidate' - $($_.Exception.Message)" -IsError $true
+            continue
+        }
     }
 
-    # Create if doesn't exist
-    if (-not (Test-Path -Path $logRoot)) {
-        New-Item -Path $logRoot -ItemType Directory -Force | Out-Null
+    # After loop, check if we found a working directory
+    if (-not $logRoot) {
+        $errorMsg = "FATAL: Could not create log directory in any candidate location. Last error: $($lastError.Exception.Message)"
+        Write-OutputWithTimestamp $errorMsg -IsError $true
+        Update-Status "Logging failed - cannot continue" $UI_Color_StatusError
+        throw $errorMsg
     }
+
+    Write-Host "DEBUG: Log dir determined as = $logRoot"
 
     # Sanitize job name for filename (replace invalid filesystem chars with underscore)
     $safeJobName = $JobName -replace '[\\/:*?"<>|]', '_'
