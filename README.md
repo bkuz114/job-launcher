@@ -1,6 +1,6 @@
 # Job Launcher
 
-A PowerShell GUI tool that runs CLI jobs defined in a JSON manifest.
+A PowerShell GUI tool that transforms a JSON manifest into a clickable dashboard for your CLI tools.
 
 ## Why this exists
 
