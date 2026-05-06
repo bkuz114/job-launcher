@@ -70,7 +70,8 @@ $LogIncludeEnvironmentInfo = $true
 
 # --- Default Paths ---
 $DefaultConfigPath = "launcher_config.json"
-$DefaultLogsDirectory = "Logs"  # Relative to script location (used if JSON doesn't specify)
+$DefaultLogsDirectoryName = "Logs"  # Name of default log folder (relative to script; used if JSON doesn't specify) 
+$DefaultLogsDirectory = Join-Path -Path (Split-Path -Path $script:MyInvocation.MyCommand.Path -Parent) -ChildPath $DefaultLogsDirectoryName
 
 # =============================================================================
 # END USER CONFIGURABLE SETTINGS
@@ -140,8 +141,7 @@ function Write-LogFile {
     $logRoot = if ($jsonLogDir) {
         $jsonLogDir
     } else {
-        # Resolve default relative to script location
-        Join-Path -Path (Split-Path -Path $script:MyInvocation.MyCommand.Path -Parent) -ChildPath $DefaultLogsDirectory
+        $DefaultLogsDirectory
     }
 
     # Create if doesn't exist
