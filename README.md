@@ -21,10 +21,36 @@ Job Launcher solves this: declare your commands once in JSON, then launch any of
 - **Visual feedback** – Button flashes green on success, red on failure; status bar updates
 - **No admin required** – Runs with user permissions only
 
-## Quick Start
+## Quick start
 
-1. Edit `launcher_config.json` with your jobs
-2. Run `JobLauncher.ps1` (double-click the shortcut)
+### One-time PowerShell setup
+
+PowerShell's default execution policy may block running scripts. Run this command in PowerShell **once per session** or per script execution:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+### Run from PowerShell console
+
+```powershell
+cd C:\path\to\job-launcher
+.\JobLauncher.ps1
+```
+
+### Create a desktop shortcut (one‑click launch)
+
+1. Right‑click on desktop → **New** → **Shortcut**
+2. In the location field, enter:
+
+```
+powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File "C:\full\path\to\JobLauncher.ps1"
+```
+
+3. Click **Next**, name it `Job Launcher`, click **Finish**
+4. (Optional) Right‑click the new shortcut → **Properties** → **Change Icon** → browse to `%SystemRoot%\System32\imageres.dll` for Windows icons
+
+Now double‑click the shortcut to launch – no console window, no admin prompt.
 
 ## Configuration
 
@@ -73,41 +99,9 @@ Logs older than 30 days are automatically deleted. Retention period is configura
 
 ## Requirements
 
-- Windows PowerShell 5.1 or later
-- No administrative privileges required
-
-## Running the Launcher
-
-### One-time PowerShell execution policy bypass
-
-PowerShell's default execution policy may block running scripts. Run this command in PowerShell **once per session** or per script execution:
-
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-```
-
-This only affects the current PowerShell window and requires no administrator privileges.
-
-### Run from PowerShell console
-
-```powershell
-cd C:\path\to\job-launcher
-.\JobLauncher.ps1
-```
-
-### Create a desktop shortcut (one‑click launch)
-
-1. Right‑click on desktop → **New** → **Shortcut**
-2. In the location field, enter:
-
-```
-powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File "C:\full\path\to\JobLauncher.ps1"
-```
-
-3. Click **Next**, name it `Job Launcher`, click **Finish**
-4. (Optional) Right‑click the new shortcut → **Properties** → **Change Icon** → browse to `%SystemRoot%\System32\imageres.dll` for Windows icons
-
-Now double‑click the shortcut to launch – no console window, no admin prompt.
+- Windows PowerShell 5.1 or later (built into Windows 10/11)
+- No administrator privileges required
+- No additional modules or installs
 
 ## License
 
