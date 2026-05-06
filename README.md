@@ -2,6 +2,25 @@
 
 A PowerShell GUI tool that runs CLI jobs defined in a JSON manifest.
 
+## Why this exists
+
+You have command-line tools with long, hard-to-remember arguments. Right now you probably:
+- Keep a notepad file of copy-paste commands
+- Scroll through terminal history
+- Retype lengthy paths and flags
+
+Job Launcher solves this: declare your commands once in JSON, then launch any of them with a single click. No terminal. No copy-paste. No typos.
+
+## Features
+
+- **Declarative config** – JSON manifest maps job names to CLI commands
+- **Dynamic UI** – Buttons auto-generate from your config; switch between job categories
+- **One-click execution** – Click a button, watch output appear
+- **Timeout & kill** – Jobs that hang get terminated (process tree killed)
+- **Automatic logging** – Every run saves stdout/stderr to a timestamped log file
+- **Visual feedback** – Button flashes green on success, red on failure; status bar updates
+- **No admin required** – Runs with user permissions only
+
 ## Quick Start
 
 1. Edit `launcher_config.json` with your jobs
