@@ -82,7 +82,7 @@ $LogsDirectoryRelativeToScript = $true
 
 # Script-scoped variables (not global scope, but accessible to functions defined below)
 $script:CurrentRunningJob = $null           # Hashtable with: Process, JobName, Button, StartTime
-$script:JobsData = $null                    # Parsed JSON jobs array
+$script:GroupsData = $null                  # Parsed JSON groups array
 $script:Settings = $null                    # Parsed JSON settings object
 $script:OutputTextBox = $null               # Reference to UI control
 $script:StatusLabel = $null                 # Reference to UI control
@@ -491,20 +491,27 @@ function Load-Configuration {
         $jsonContent = Get-Content -Path $ConfigPath -Raw -Encoding UTF8
         $config = $jsonContent | ConvertFrom-Json
 
-        # Validate required structure
+        # Validate required structure (nested format)
         if (-not $config.settings) { throw "Missing 'settings' section" }
-        if (-not $config.jobs) { throw "Missing 'jobs' array" }
-        if ($config.jobs.Count -eq 0) { throw "No jobs defined in configuration" }
+        if (-not $config.groups) { throw "Missing 'groups' array" }
+        if ($config.groups.Count -eq 0) { throw "No groups defined in configuration" }
 
-        # Validate each job has required fields
-        foreach ($job in $config.jobs) {
-            if ([string]::IsNullOrWhiteSpace($job.name)) { throw "Job missing 'name' field" }
-            if ([string]::IsNullOrWhiteSpace($job.command)) { throw "Job '$($job.name)' missing 'command' field" }
+        # Validate each group has name and jobs
+        foreach ($group in $config.groups) {
+            if ([string]::IsNullOrWhiteSpace($group.name)) { throw "Group missing 'name' field" }
+            if (-not $group.jobs) { throw "Group '$($group.name)' missing 'jobs' array" }
+            if ($group.jobs.Count -eq 0) { throw "Group '$($group.name)' has no jobs defined" }
+
+            # Validate each job in the group
+            foreach ($job in $group.jobs) {
+                if ([string]::IsNullOrWhiteSpace($job.name)) { throw "Job missing 'name' field in group '$($group.name)'" }
+                if ([string]::IsNullOrWhiteSpace($job.command)) { throw "Job '$($job.name)' missing 'command' field" }
+            }
         }
 
         # Store globally
         $script:Settings = $config.settings
-        $script:JobsData = $config.jobs
+        $script:GroupsData = $config.groups
 
         return $true
     }
@@ -640,21 +647,17 @@ function Build-GUI {
     return $result
 }
 
-# Define this OUTSIDE of Populate-GUI
 function UpdateButtonsForGroup {
-    param($GroupName, $FormControls)
+    param($Group, $FormControls)
 
     # Clear existing buttons
     $FormControls.ButtonPanel.Controls.Clear()
     $script:JobButtons.Clear()
 
-    # Filter jobs for this group (preserve JSON order)
-    $filteredJobs = $script:JobsData | Where-Object {
-        $jobGroup = if ($_.group) { $_.group } else { "Uncategorized" }
-        $jobGroup -eq $GroupName
-    }
+    # Direct access to jobs from the group object (no filtering needed)
+    $jobs = $Group.jobs
 
-    foreach ($job in $filteredJobs) {
+    foreach ($job in $jobs) {
         $btn = New-Object System.Windows.Forms.Button
         $btn.Text = $job.name
         $btn.Height = $UI_Button_Height
@@ -675,7 +678,7 @@ function UpdateButtonsForGroup {
             if ($this.Enabled) { $this.BackColor = $UI_Color_Button }
         })
 
-        # Click handler - with conversion
+        # Click handler - with conversion for compatibility
         $btn.Add_Click({
             # Convert PSCustomObject to Hashtable
             $jobToRun = @{}
@@ -722,17 +725,8 @@ function Populate-GUI {
         return
     }
 
-    # Extract unique groups in order of first appearance
-    $groups = [System.Collections.Generic.List[string]]::new()
-    $groupSet = @{}
-
-    foreach ($job in $script:JobsData) {
-        $groupName = if ($job.group) { $job.group } else { "Uncategorized" }
-        if (-not $groupSet.ContainsKey($groupName)) {
-            $groupSet[$groupName] = $true
-            $null = $groups.Add($groupName)
-        }
-    }
+    # Get group names directly from GroupsData array
+    $groups = $script:GroupsData | ForEach-Object { $_.name }
 
     # Populate ListBox
     $FormControls.ListBox.Items.Clear()
@@ -744,16 +738,19 @@ function Populate-GUI {
         $FormControls.ListBox.SelectedIndex = 0
     }
 
-    # Bind selection change event - now calling the global function
+    # Bind selection change event
     $FormControls.ListBox.Add_SelectedIndexChanged({
-        if ($FormControls.ListBox.SelectedItem) {
-            UpdateButtonsForGroup -GroupName $FormControls.ListBox.SelectedItem -FormControls $FormControls
+        if ($FormControls.ListBox.SelectedItem -and $script:GroupsData) {
+            $selectedIndex = $FormControls.ListBox.SelectedIndex
+            $selectedGroup = $script:GroupsData[$selectedIndex]
+            UpdateButtonsForGroup -Group $selectedGroup -FormControls $FormControls
         }
     })
 
     # Trigger initial population
     if ($FormControls.ListBox.Items.Count -gt 0) {
-        UpdateButtonsForGroup -GroupName $FormControls.ListBox.Items[0] -FormControls $FormControls
+        $selectedGroup = $script:GroupsData[0]
+        UpdateButtonsForGroup -Group $selectedGroup -FormControls $FormControls
     }
 }
 
