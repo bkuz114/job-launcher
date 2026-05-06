@@ -28,7 +28,48 @@ Job Launcher solves this: declare your commands once in JSON, then launch any of
 
 ## Configuration
 
-See `launcher_config.json` schema in the file itself.
+Edit `launcher_config.json`. Minimal example:
+
+```json
+{
+  "settings": {
+    "default_timeout_seconds": 60
+  },
+  "jobs": [
+    {
+      "name": "Build Project",
+      "command": "msbuild.exe MyProject.sln /p:Configuration=Release",
+      "group": "Build"
+    },
+    {
+      "name": "Deploy to Staging",
+      "command": "robocopy C:\\source \\\\server\\share /MIR",
+      "group": "Deploy",
+      "timeout_seconds": 300
+    }
+  ]
+}
+```
+
+See `launcher_config.json` in the repo for a complete example with test commands.
+
+## Logs
+
+Every job run creates a log file in the `Logs/` folder (next to the script). File naming:
+
+```
+JobName_20260115_143022.log
+```
+
+Each log contains:
+- Command line executed
+- Working directory
+- Timeout value
+- Exit code
+- Full stdout + stderr output
+- Termination reason (Completed / Timeout / KilledByUser / DirectoryNotFound)
+
+Logs older than 30 days are automatically deleted. Retention period is configurable at the top of `JobLauncher.ps1`.
 
 ## Requirements
 
