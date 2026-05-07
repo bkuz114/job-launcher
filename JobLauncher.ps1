@@ -794,7 +794,7 @@ function Build-GUI {
     $null = $rootTable.Controls.Add($toolbar, 0, 0)
     $null = $rootTable.Controls.Add($contentPanel, 0, 1)
     $null = $form.Controls.Add($rootTable)
-    $null = $form.Controls.Add($statusStrip)  # Added last, docks to bottom automatically
+    #$null = $form.Controls.Add($statusStrip)  # Added last, docks to bottom automatically
 
     # =========================================================================
     # STORE REFERENCES IN SCRIPT SCOPE (globals for wide access)
