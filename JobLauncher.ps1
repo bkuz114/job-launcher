@@ -782,7 +782,7 @@ function Initialize-Toolbar {
     $killButton.AutoSizeMode = "GrowAndShrink"
     $killButton.Padding = New-Object System.Windows.Forms.Padding(10, 5, 10, 5)
     $killButton.FlatStyle = "Flat"
-    $killButton.Margin = New-Object System.Windows.Forms.Padding(5, 0, 5, 0)
+    $killButton.Margin = New-Object System.Windows.Forms.Padding(5, 5, 5, 5)
     $killButton.Enabled = $false
     $killButton.Add_Click({
         Stop-CurrentJob
@@ -815,7 +815,7 @@ function Build-GUI {
     #$null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))  # Toolbar
     # following line that's commented out: when i actually add the toolbar, the height is excessive. the solution is to get rid of
     # audoSize and instead use this fixed height. Since I'm not actually adding the toolbar in, I'm using AutoSize so that it doesn't take space
-    $null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 45)))  # Toolbar
+    $null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 50)))  # Toolbar
     $null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100))) # Content
 
     # =========================================================================
