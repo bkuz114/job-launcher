@@ -24,6 +24,8 @@ $ErrorActionPreference = 'Stop'
 $script:CurrentTheme = $null
 $script:CurrentThemePalette = $null
 
+$script:KillRequested = $false
+
 # =============================================================================
 # NAMED THEMES
 # =============================================================================
@@ -404,12 +406,22 @@ function Invoke-JobWithTimeout {
         $elapsedMs = 0
 
         while ($elapsedMs -lt $totalWaitMs) {
-            if ($process.HasExited) {
+            if ($process.HasExited) { break }
+
+            # Let Windows process pending UI events (clicks, resizing, etc.)
+            [System.Windows.Forms.Application]::DoEvents()
+
+            # Check if kill button was clicked
+            if ($script:KillRequested) {
+                Write-OutputWithTimestamp "Kill requested, stopping job" -IsError $true
                 break
             }
+
             Start-Sleep -Milliseconds $TimeoutPollIntervalMs
             $elapsedMs += $TimeoutPollIntervalMs
         }
+
+        $script:KillRequested = $false
 
         if (-not $process.HasExited) {
             # Timeout reached - kill process
@@ -465,6 +477,7 @@ function Invoke-JobWithTimeout {
         }
     }
     catch {
+        $script:KillRequested = $false
         $errorMsg = "Exception during job execution: $($_.Exception.Message)"
         Write-OutputWithTimestamp $errorMsg -IsError $true
         Update-Status "Error: $($Job.name)" $UI_Color_StatusError
@@ -481,12 +494,14 @@ function Invoke-JobWithTimeout {
     }
     finally {
         $process.Dispose()
+        $script:KillRequested = $false
         $script:CurrentRunningJob = $null
     }
 }
 
 function Set-JobButtonsEnabled {
     param([bool]$Enabled)
+    Write-Host "DEBUG: Set-JobButtonsEnabled $Enabled"
 
     $UI_Color_Button = Get-ThemeColor -PropertyName "button"
     $UI_Color_ButtonRunning = Get-ThemeColor -PropertyName "button_running"
@@ -507,6 +522,7 @@ function Set-JobButtonsEnabled {
 
     if ($script:KillButton) {
         $script:KillButton.Enabled = (-not $Enabled)  # Kill button enabled only when job running
+        Write-Host "DEBUG: Kill button status switched: Current enabled state: $($script:KillButton.Enabled)"
     }
 }
 
@@ -518,7 +534,9 @@ function Invoke-JobAndManageUI {
     $UI_Color_Background = Get-ThemeColor -PropertyName "form_background" 
 
     # Disable all job buttons
+    Write-Host "DEBUG: Invoke-JobAndManageUI - About to disable job buttons (kill button should enable)"
     Set-JobButtonsEnabled -Enabled $false
+    Write-Host "DEBUG: Invoke-JobAndManageUI - After Set-JobButtonsEnabled call"
 
     if ($UI_ClearOutputBeforeEachJob) {
         $script:OutputTextBox.Clear()
@@ -546,6 +564,8 @@ function Invoke-JobAndManageUI {
 function Stop-CurrentJob {
     $UI_Color_Background = Get-ThemeColor -PropertyName "form_background" 
 
+    $script:KillRequested = $true
+
     if (-not $script:CurrentRunningJob) {
         Write-OutputWithTimestamp "No job currently running"
         return
@@ -566,6 +586,7 @@ function Stop-CurrentJob {
             [System.Windows.Forms.MessageBoxIcon]::Warning
         )
         if ($result -ne [System.Windows.Forms.DialogResult]::Yes) {
+            $script:KillRequested = $false
             return
         }
     }
@@ -579,6 +600,7 @@ function Stop-CurrentJob {
     if (-not $process) {
         Write-OutputWithTimestamp "No process reference found" -IsError $true
         $script:CurrentRunningJob = $null
+        $script:KillRequested = $false
         Set-JobButtonsEnabled -Enabled $true
         Update-Status "Ready" $UI_Color_Background
         return
@@ -616,6 +638,7 @@ function Stop-CurrentJob {
     }
     finally {
         $script:CurrentRunningJob = $null
+        $script:KillRequested = $false
         Set-JobButtonsEnabled -Enabled $true
         Update-Status "Ready" $UI_Color_Background
     }
@@ -867,6 +890,7 @@ function UpdateButtonsForGroup {
             $buttonRef = $this
 
             # Disable all job buttons immediately
+            Write-Host "DEBUG: button click handler: About to disable job buttons (kill button should enable)"
             Set-JobButtonsEnabled -Enabled $false
 
             if ($UI_ClearOutputBeforeEachJob) {
@@ -888,6 +912,7 @@ function UpdateButtonsForGroup {
             }
 
             # Re-enable all job buttons
+            Write-Host "DEBUG: button click handler: About to re-enable job buttons (kill button should disable)"
             Set-JobButtonsEnabled -Enabled $true
             Update-Status "Ready" $UI_Color_Background
         })
@@ -1011,6 +1036,7 @@ function Apply-Colors {
 
     # Kill button
     if ($script:KillButton) {
+        Write-OutputWithTimestamp "DEBUG: Coloring Kill button. Current enabled state: $($script:KillButton.Enabled)"
         $color = Get-ThemeColor -PropertyName "kill_button"
         $script:KillButton.BackColor = $color
 
