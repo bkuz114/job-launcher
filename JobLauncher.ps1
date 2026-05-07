@@ -20,21 +20,74 @@ Set-StrictMode -Version Latest
 # Default error action: Stop makes try/catch work predictably
 $ErrorActionPreference = 'Stop'
 
+# Will hold hashtable from $Script:Themes
+$script:CurrentTheme = $null
+$script:CurrentThemePalette = $null
+
+# =============================================================================
+# NAMED THEMES
+# =============================================================================
+
+$Script:Themes = @{
+    "default" = @{
+        form_background   = "#F0F0F0"
+        list_background   = "#FFFFFF"
+        list_text         = "#000000"
+        panel_background  = "#F0F0F0"
+        button            = "#DCE6F0"
+        button_hover      = "#C8D7E6"
+        button_text       = "#000000"
+        button_running    = "#FFC107"
+        kill_button       = "#DCE6F0"
+        kill_button_text  = "#000000"
+        output_background = "#1E1E1E"
+        output_text       = "#E0E0E0"
+        status_text       = "#000000"   # Black on light background
+        status_ok         = "#28A745"
+        status_error      = "#DC3545"
+        status_running    = "#FFC107"
+    }
+    "dark" = @{
+        form_background   = "#1E1E1E"
+        list_background   = "#252525"
+        list_text         = "#E0E0E0"
+        panel_background  = "#2D2D2D"
+        button            = "#3C3C3C"
+        button_hover      = "#505050"
+        button_text       = "#E0E0E0"
+        button_running    = "#FFC107"
+        kill_button       = "#3C3C3C"
+        kill_button_text  = "#E0E0E0"
+        output_background = "#1A1A1A"
+        output_text       = "#C0C0C0"
+        status_text       = "#E0E0E0"   # Light gray on dark background
+        status_ok         = "#28A745"
+        status_error      = "#DC3545"
+        status_running    = "#FFC107"
+    }
+    "ocean" = @{
+        form_background   = "#0A192F"
+        list_background   = "#112240"
+        list_text         = "#E6F1FF"
+        panel_background  = "#1A365D"
+        button            = "#2A4B7C"
+        button_hover      = "#3A6B9C"
+        button_text       = "#E6F1FF"
+        button_running    = "#FFB800"
+        kill_button       = "#2A4B7C"
+        kill_button_text  = "#E6F1FF"
+        output_background = "#0A192F"
+        output_text       = "#E6F1FF"
+        status_text       = "#E6F1FF"   # Soft light blue on dark blue background
+        status_ok         = "#28A745"
+        status_error      = "#DC3545"
+        status_running    = "#FFC107"
+    }
+}
+
 # =============================================================================
 # USER CONFIGURABLE SETTINGS
 # =============================================================================
-
-# --- UI Colors ---
-$UI_Color_Background = [System.Drawing.Color]::FromArgb(240, 240, 240)
-$UI_Color_Panel = [System.Drawing.Color]::White
-$UI_Color_Button = [System.Drawing.Color]::FromArgb(220, 230, 240)
-$UI_Color_ButtonHover = [System.Drawing.Color]::FromArgb(200, 215, 230)
-$UI_Color_ButtonRunning = [System.Drawing.Color]::FromArgb(255, 200, 100)
-$UI_Color_OutputBackground = [System.Drawing.Color]::FromArgb(30, 30, 30)
-$UI_Color_OutputText = [System.Drawing.Color]::FromArgb(220, 220, 220)
-$UI_Color_StatusOk = [System.Drawing.Color]::FromArgb(40, 180, 60)
-$UI_Color_StatusError = [System.Drawing.Color]::FromArgb(220, 60, 50)
-$UI_Color_StatusRunning = [System.Drawing.Color]::FromArgb(240, 180, 0)
 
 # --- UI Fonts ---
 $UI_Font_Family = "Segoe UI"
@@ -96,6 +149,48 @@ $script:GroupListBox = $null                # Reference to groups ListBox
 # HELPER FUNCTIONS
 # =============================================================================
 
+<#
+.SYNOPSIS
+    Converts a hexadecimal color string to a System.Drawing.Color object.
+
+.DESCRIPTION
+    Takes a hex color string in formats "#RRGGBB" or "RRGGBB" and returns
+    the corresponding Drawing.Color object. Returns $null if the input
+    is invalid or empty.
+
+.PARAMETER HexColor
+    Hexadecimal color string. Accepts "#RRGGBB" or "RRGGBB" format.
+    Example values: "#FFC107", "28A745", "#1E1E1E"
+
+.EXAMPLE
+    $color = Convert-HexColorToDrawingColor -HexColor "#3C6E71"
+
+.EXAMPLE
+    $color = Convert-HexColorToDrawingColor "DC3545"
+
+.NOTES
+    Returns $null for:
+    - Empty or null input
+    - Strings not exactly 6 hex digits (after optional #)
+    - Invalid hex characters
+
+    Does NOT throw exceptions. Callers should handle $null returns appropriately.
+#>
+function Convert-HexColorToDrawingColor {
+    param([string]$HexColor)
+
+    if (-not $HexColor) { return $null }
+
+    $hex = $HexColor.TrimStart('#')
+    if ($hex.Length -eq 6) {
+        $r = [Convert]::ToInt32($hex.Substring(0,2), 16)
+        $g = [Convert]::ToInt32($hex.Substring(2,2), 16)
+        $b = [Convert]::ToInt32($hex.Substring(4,2), 16)
+        return [System.Drawing.Color]::FromArgb($r, $g, $b)
+    }
+    return $null
+}
+
 function Write-OutputWithTimestamp {
     param([string]$Text, [bool]$IsError = $false)
 
@@ -129,6 +224,11 @@ function Write-LogFile {
         [string]$Output,
         [string]$TerminationReason  # "Completed", "Timeout", "KilledByUser", "DirectoryNotFound", etc.
     )
+
+    # colors for current theme
+    $UI_Color_StatusError = Get-ThemeColor -PropertyName "status_error"
+    $UI_Color_StatusOk = Get-ThemeColor -PropertyName "status_ok"
+    $UI_Color_StatusRunning = Get-ThemeColor -PropertyName "status_running"
 
     # Determine log directory: JSON setting if provided, otherwise use configured default
 
@@ -227,6 +327,9 @@ PowerShell Version: $psVersion
 
 function Invoke-JobWithTimeout {
     param([PSObject]$Job, [System.Windows.Forms.Button]$JobButton)
+
+    $UI_Color_StatusError = Get-ThemeColor -PropertyName "status_error"
+    $UI_Color_StatusOk = Get-ThemeColor -PropertyName "status_ok"
 
     # === Validate working directory ===
     $workingDir = if ($Job.working_directory) {
@@ -385,6 +488,9 @@ function Invoke-JobWithTimeout {
 function Set-JobButtonsEnabled {
     param([bool]$Enabled)
 
+    $UI_Color_Button = Get-ThemeColor -PropertyName "button"
+    $UI_Color_ButtonRunning = Get-ThemeColor -PropertyName "button_running"
+
     foreach ($btn in $script:JobButtons.Values) {
         $btn.Enabled = $Enabled
         if ($Enabled) {
@@ -406,6 +512,10 @@ function Set-JobButtonsEnabled {
 
 function Invoke-JobAndManageUI {
     param([hashtable]$Job, [System.Windows.Forms.Button]$JobButton)
+
+    $UI_Color_StatusError = Get-ThemeColor -PropertyName "status_error"
+    $UI_Color_StatusOk = Get-ThemeColor -PropertyName "status_ok"
+    $UI_Color_Background = Get-ThemeColor -PropertyName "form_background" 
 
     # Disable all job buttons
     Set-JobButtonsEnabled -Enabled $false
@@ -434,6 +544,8 @@ function Invoke-JobAndManageUI {
 }
 
 function Stop-CurrentJob {
+    $UI_Color_Background = Get-ThemeColor -PropertyName "form_background" 
+
     if (-not $script:CurrentRunningJob) {
         Write-OutputWithTimestamp "No job currently running"
         return
@@ -562,6 +674,14 @@ function Load-Configuration {
 }
 
 function Build-GUI {
+
+    # current theme colors
+    $UI_Color_Background = Get-ThemeColor -PropertyName "form_background"
+    $UI_Color_Panel = Get-ThemeColor -PropertyName "list_background"
+    $UI_Color_OutputBackground = Get-ThemeColor -PropertyName "output_background"
+    $UI_Color_OutputText = Get-ThemeColor -PropertyName "output_text"
+    $UI_Color_Button = Get-ThemeColor -PropertyName "button"
+
     # --- Main Form ---
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "Job Launcher"
@@ -692,6 +812,9 @@ function UpdateButtonsForGroup {
     # Direct access to jobs from the group object (no filtering needed)
     $jobs = $Group.jobs
 
+    $UI_Color_Button = Get-ThemeColor -PropertyName "button"
+    $UI_Color_Button_Text = Get-ThemeColor -PropertyName "button_text"
+
     foreach ($job in $jobs) {
         $btn = New-Object System.Windows.Forms.Button
         $btn.Text = $job.name
@@ -699,6 +822,7 @@ function UpdateButtonsForGroup {
         $btn.Width = $FormControls.ButtonPanel.Width - 20
         $btn.TextAlign = "MiddleLeft"
         $btn.BackColor = $UI_Color_Button
+        $btn.ForeColor = $UI_Color_Button_Text
         $btn.FlatStyle = "Flat"
         $btn.Margin = New-Object System.Windows.Forms.Padding($UI_Button_Margin)
 
@@ -707,14 +831,19 @@ function UpdateButtonsForGroup {
 
         # Add hover effect
         $btn.Add_MouseEnter({
-            if ($this.Enabled) { $this.BackColor = $UI_Color_ButtonHover }
+            if ($this.Enabled) { $this.BackColor = Get-ThemeColor -PropertyName "button_hover" }
         })
+
         $btn.Add_MouseLeave({
-            if ($this.Enabled) { $this.BackColor = $UI_Color_Button }
+            if ($this.Enabled) { $this.BackColor = Get-ThemeColor -PropertyName "button" }
         })
 
         # Click handler - with conversion for compatibility
         $btn.Add_Click({
+            $UI_Color_StatusOk = Get-ThemeColor -PropertyName "status_ok" 
+            $UI_Color_StatusError = Get-ThemeColor -PropertyName "status_error" 
+            $UI_Color_Background = Get-ThemeColor -PropertyName "form_background"
+
             # Convert PSCustomObject to Hashtable
             $jobToRun = @{}
             $this.Tag.psobject.Properties | ForEach-Object { $jobToRun[$_.Name] = $_.Value }
@@ -751,6 +880,299 @@ function UpdateButtonsForGroup {
     }
 }
 
+<#
+.SYNOPSIS
+    Retrieves a color from the currently active theme palette.
+
+.DESCRIPTION
+    Looks up the specified property name in $script:CurrentThemePalette.
+    Throws an error if the property is missing or hex conversion fails.
+
+.PARAMETER PropertyName
+    The key to look up (e.g., "form_background", "button").
+#>
+function Get-ThemeColor {
+    param([string]$PropertyName)
+
+    if (-not $script:CurrentThemePalette) {
+        throw "No current theme palette set. Call Set-Theme first."
+    }
+
+    $hexValue = $script:CurrentThemePalette[$PropertyName]
+    if (-not $hexValue) {
+        throw "Property '$PropertyName' not found in current theme '$script:CurrentThemeName'"
+    }
+
+    $color = Convert-HexColorToDrawingColor -HexColor $hexValue
+    if (-not $color) {
+        throw "Property '$PropertyName' has invalid hex value: '$hexValue'"
+    }
+
+    return $color
+}
+
+<#
+.SYNOPSIS
+    Applies color theme to all UI elements based on the selected group.
+
+.DESCRIPTION
+    Resolves the theme name from the group (or global settings), retrieves the
+    corresponding color palette from $Script:Themes, and applies colors to:
+    - Main window background
+    - Group list (ListBox) background and text
+    - Button panel background
+    - Kill button background and text
+    - Output textbox background and text
+    - Status label text
+    - All job buttons (background, text, and hover states)
+
+    If a group specifies a theme that doesn't exist, falls back to "default"
+    and logs a warning. Missing color properties within a theme fall back to
+    the "default" theme's values via Get-ThemeColor.
+
+.PARAMETER Group
+    The current group object from $script:GroupsData. Contains .name, .jobs,
+    and optionally .theme (string) and .color_theme (for legacy hex overrides).
+
+.PARAMETER FormControls
+    Hashtable containing UI control references:
+        - Form      : The main window
+        - ListBox   : Group list (left panel)
+        - ButtonPanel : Panel containing job buttons (right panel)
+
+    Global variables $script:KillButton, $script:OutputTextBox, and
+    $script:StatusLabel are also used.
+
+.EXAMPLE
+    Apply-Colors -Group $selectedGroup -FormControls $FormControls
+
+.NOTES
+    This function is called by SetGroup after UpdateButtonsForGroup has created
+    the job buttons. It assumes $script:JobButtons is populated with all
+    current buttons.
+
+    Hover handlers are added to each button each time Apply-Colors runs.
+    This is idempotent (multiple handlers set the same color) and avoids
+    complex handler removal logic.
+
+    Defensive checks prevent errors if any UI control is missing.
+#>
+function Apply-Colors {
+    param(
+        [PSObject]$Group,
+        [hashtable]$FormControls
+    )
+
+    # === Apply colors to each UI element ===
+
+    # Main window background
+    if ($FormControls.Form) {
+        $color = Get-ThemeColor -PropertyName "form_background"
+        $FormControls.Form.BackColor = $color
+    }
+
+    # Left button panel (group list)
+    if ($FormControls.ListBox) {
+        $color = Get-ThemeColor -PropertyName "list_background"
+        $FormControls.ListBox.BackColor = $color
+
+        $textColor = Get-ThemeColor -PropertyName "list_text"
+        $FormControls.ListBox.ForeColor = $textColor
+    }
+
+    # Button panel background
+    if ($FormControls.ButtonPanel) {
+        $color = Get-ThemeColor -PropertyName "panel_background"
+        $FormControls.ButtonPanel.BackColor = $color
+    }
+
+    # Kill button
+    if ($script:KillButton) {
+        $color = Get-ThemeColor -PropertyName "kill_button"
+        $script:KillButton.BackColor = $color
+
+        $textColor = Get-ThemeColor -PropertyName "kill_button_text"
+        $script:KillButton.ForeColor = $textColor
+    }
+
+    # Output textbox
+    if ($script:OutputTextBox) {
+        $color = Get-ThemeColor -PropertyName "output_background"
+        $script:OutputTextBox.BackColor = $color
+
+        $textColor = Get-ThemeColor -PropertyName "output_text"
+        $script:OutputTextBox.ForeColor = $textColor
+    }
+
+    # Status label
+    if ($script:StatusLabel) {
+        $color = Get-ThemeColor -PropertyName "status_text"
+        $script:StatusLabel.ForeColor = $color
+    }
+}
+
+<#
+.SYNOPSIS
+    Initializes the global theme at script startup using settings.theme from JSON.
+
+.DESCRIPTION
+    Called once from Main() before building the UI. Reads the global
+    settings.theme property (if present) and activates it via Set-Theme.
+    If no theme is specified in JSON, defaults to "default".
+
+    This function does not return a value. It sets $script:CurrentThemeName
+    and $script:CurrentThemePalette globally.
+
+.EXAMPLE
+    Initialize-Theme
+
+.NOTES
+    Uses Set-Theme to apply the theme. Throws an error if the specified
+    theme name does not exist in $Script:Themes.
+#>
+function Initialize-Theme {
+    # Resolve theme name (group > settings > "default")
+    $initialThemeName = "default"
+
+    if ($script:Settings.PSObject.Properties['theme'] -and $script:Settings.theme) {
+        $initialThemeName = $script:Settings.theme
+    }
+
+    # Validate theme exists
+    if ($Script:Themes.ContainsKey($initialThemeName)) {
+        $script:CurrentThemeName = $initialThemeName
+        $script:CurrentThemePalette = $Script:Themes[$initialThemeName]
+        Write-Host "DEBUG: initial theme set to: $initialThemeName"
+    } else {
+        Write-Host "WARNING: Theme '$initialThemeName' not found. Fallback to default."
+        $script:CurrentThemeName = "default"
+        $script:CurrentThemePalette = $Script:Themes["default"]
+    }
+}
+
+<#
+.SYNOPSIS
+    Determines the theme name for a specific group based on configuration.
+
+.DESCRIPTION
+    Evaluates theme selection priority:
+        1. Group's own 'theme' property (if defined in JSON)
+        2. Global 'settings.theme' (if defined in JSON)
+        3. Falls back to "default"
+
+    This function performs validation only to the extent of checking
+    property existence in the PSCustomObject from JSON. It does NOT
+    verify that the theme name exists in $Script:Themes.
+
+.PARAMETER Group
+    The group object (from $script:GroupsData) containing optional .theme property.
+
+.EXAMPLE
+    $themeName = Get-GroupTheme -Group $selectedGroup
+
+.NOTES
+    Returns a string. Does not modify global state. Caller should pass
+    the returned name to Set-Theme.
+#>
+function Get-GroupTheme {
+    param([PSObject]$Group)
+
+    # Resolve theme name (group > settings > "default")
+    if ($Group.PSObject.Properties['theme'] -and $Group.theme) {
+        return $Group.theme
+    }
+    if ($script:Settings.PSObject.Properties['theme'] -and $script:Settings.theme) {
+        return $script:Settings.theme
+    }
+    return "default"
+}
+
+<#
+.SYNOPSIS
+    Activates a named theme by setting global theme variables.
+
+.DESCRIPTION
+    Updates $script:CurrentThemeName and $script:CurrentThemePalette
+    for the specified theme. All subsequent Get-ThemeColor calls will
+    use this palette.
+
+    If the requested theme name does not exist in $Script:Themes, the
+    function throws a terminating error. This is intentional to prevent
+    silent failures and inconsistent UI coloring.
+
+.PARAMETER themeName
+    The name of the theme to activate (must be a key in $Script:Themes).
+
+.EXAMPLE
+    Set-Theme -themeName "dark"
+
+.EXAMPLE
+    Set-Theme "ocean"
+
+.NOTES
+    This function does NOT update any UI elements. Call Apply-Colors
+    separately to refresh the interface after changing the theme.
+#>
+function Set-Theme {
+    param([string]$themeName)
+
+    # Validate theme exists
+    if ($Script:Themes.ContainsKey($themeName)) {
+        $script:CurrentThemeName = $themeName
+        $script:CurrentThemePalette = $Script:Themes[$themeName]
+    } else {
+        throw "Can't set theme '$themeName' -- doesn't exist."
+    }
+}
+
+<#
+.SYNOPSIS
+    Switches the UI to display a different job group.
+
+.DESCRIPTION
+    Orchestrates the full UI refresh when a user selects a new group from the
+    left panel. This function is the single entry point for group changes.
+
+    Steps performed:
+    1. Recreates all job buttons for the new group (UpdateButtonsForGroup)
+    2. Applies color theme to all UI elements (Apply-Colors)
+
+    Separating button recreation from theme application keeps concerns clean
+    and allows theme to be reapplied without rebuilding buttons if needed.
+
+.PARAMETER Group
+    The target group object from $script:GroupsData. Contains .name, .jobs,
+    and optionally .theme.
+
+.PARAMETER FormControls
+    Hashtable containing UI control references (Form, ListBox, ButtonPanel).
+    Passed through to UpdateButtonsForGroup and Apply-Colors.
+
+.EXAMPLE
+    SetGroup -Group $selectedGroup -FormControls $FormControls
+
+.NOTES
+    Called from:
+    - Populate-GUI (initial load, selects the first group)
+    - ListBox SelectedIndexChanged event (user clicks a different group)
+
+    Does not modify the ListBox selection itself - that is handled by the caller
+    or user interaction. This function only responds to the selected group.
+#>
+function SetGroup {
+    param($Group, $FormControls)
+
+    # Get the theme name and set it
+    $groupTheme = Get-GroupTheme -Group $Group
+    Set-Theme -themeName $groupTheme
+
+    # Create buttons for this group
+    UpdateButtonsForGroup -Group $Group -FormControls $FormControls
+
+    # Apply theme (panel background, any other UI decorations)
+    Apply-Colors -Group $Group -FormControls $FormControls
+}
+
 function Populate-GUI {
     param($FormControls)
 
@@ -778,29 +1200,14 @@ function Populate-GUI {
         if ($FormControls.ListBox.SelectedItem -and $script:GroupsData) {
             $selectedIndex = $FormControls.ListBox.SelectedIndex
             $selectedGroup = $script:GroupsData[$selectedIndex]
-            UpdateButtonsForGroup -Group $selectedGroup -FormControls $FormControls
+            SetGroup -Group $selectedGroup -FormControls $FormControls
         }
     })
 
     # Trigger initial population
     if ($FormControls.ListBox.Items.Count -gt 0) {
         $selectedGroup = $script:GroupsData[0]
-        UpdateButtonsForGroup -Group $selectedGroup -FormControls $FormControls
-    }
-}
-
-function Initialize-ColorsForControls {
-    param($FormControls)
-
-    # Apply colors to existing controls
-    if ($FormControls.Form) {
-        $FormControls.Form.BackColor = $UI_Color_Background
-    }
-    if ($FormControls.ListBox) {
-        $FormControls.ListBox.BackColor = $UI_Color_Panel
-    }
-    if ($FormControls.ButtonPanel) {
-        $FormControls.ButtonPanel.BackColor = $UI_Color_Background
+        SetGroup -Group $selectedGroup -FormControls $FormControls
     }
 }
 
@@ -823,6 +1230,9 @@ function Main {
         Write-Host "DEBUG: Configuration load failed, exiting"
         exit 1
     }
+
+    # Set intial theme
+    Initialize-Theme
 
     Write-Host "DEBUG: About to call Build-GUI"
 
@@ -848,12 +1258,7 @@ function Main {
     # Populate with jobs - pass the entire hashtable
     Populate-GUI -FormControls $formControls
 
-    Write-Host "DEBUG: GUI populated, about to apply colors"
-
-    # Apply colors (after population)
-    Initialize-ColorsForControls -FormControls $formControls
-
-    Write-Host "DEBUG: Colors applied, setting up close handler"
+    Write-Host "DEBUG: GUI built, setting up close handler"
 
     # Handle form closing event to kill running job if needed
     $formControls.Form.Add_FormClosing({
