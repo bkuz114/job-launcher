@@ -24,6 +24,8 @@ $ErrorActionPreference = 'Stop'
 $script:CurrentTheme = $null
 $script:CurrentThemePalette = $null
 
+$script:FormControls = $null
+
 $script:KillRequested = $false
 
 # =============================================================================
@@ -843,10 +845,10 @@ function Build-GUI {
 }
 
 function UpdateButtonsForGroup {
-    param($Group, $FormControls)
+    param($Group)
 
     # Clear existing buttons
-    $FormControls.ButtonPanel.Controls.Clear()
+    $script:FormControls.ButtonPanel.Controls.Clear()
     $script:JobButtons.Clear()
 
     # Direct access to jobs from the group object (no filtering needed)
@@ -856,7 +858,7 @@ function UpdateButtonsForGroup {
         $btn = New-Object System.Windows.Forms.Button
         $btn.Text = $job.name
         $btn.Height = $UI_Button_Height
-        $btn.Width = $FormControls.ButtonPanel.Width - 20
+        $btn.Width = $script:FormControls.ButtonPanel.Width - 20
         $btn.TextAlign = "MiddleLeft"
         $btn.FlatStyle = "Flat"
         $btn.Margin = New-Object System.Windows.Forms.Padding($UI_Button_Margin)
@@ -912,7 +914,7 @@ function UpdateButtonsForGroup {
             Update-Status "Ready" $UI_Color_Background
         })
 
-        $null = $FormControls.ButtonPanel.Controls.Add($btn)
+        $null = $script:FormControls.ButtonPanel.Controls.Add($btn)
         $script:JobButtons[$job.name] = $btn
     }
 }
@@ -970,17 +972,8 @@ function Get-ThemeColor {
 .PARAMETER themeName
     The name of the theme to activate (must be a key in $Script:Themes).
 
-.PARAMETER FormControls
-    Hashtable containing UI control references:
-        - Form      : The main window
-        - ListBox   : Group list (left panel)
-        - ButtonPanel : Panel containing job buttons (right panel)
-
-    Global variables $script:KillButton, $script:OutputTextBox, and
-    $script:StatusLabel are also used.
-
 .EXAMPLE
-    Apply-Theme -themeName "default" -FormControls $FormControls
+    Apply-Theme -themeName "default"
 
 .NOTES
     This function is called by SetGroup after UpdateButtonsForGroup has created
@@ -990,10 +983,7 @@ function Get-ThemeColor {
     Defensive checks prevent errors if any UI control is missing.
 #>
 function Apply-Theme {
-    param(
-        [string]$themeName,
-        [hashtable]$FormControls
-    )
+    param([string]$themeName)
 
     # Set the theme globally first
     Set-Theme -themeName $ThemeName
@@ -1001,30 +991,30 @@ function Apply-Theme {
     # === Apply colors to each UI element ===
 
     # Main window background
-    if ($FormControls.Form) {
+    if ($script:FormControls.Form) {
         $color = Get-ThemeColor -PropertyName "form_background"
-        $FormControls.Form.BackColor = $color
+        $script:FormControls.Form.BackColor = $color
     }
 
     # Left button panel (group list)
-    if ($FormControls.ListBox) {
+    if ($script:FormControls.ListBox) {
         $color = Get-ThemeColor -PropertyName "list_background"
-        $FormControls.ListBox.BackColor = $color
+        $script:FormControls.ListBox.BackColor = $color
 
         $textColor = Get-ThemeColor -PropertyName "list_text"
-        $FormControls.ListBox.ForeColor = $textColor
+        $script:FormControls.ListBox.ForeColor = $textColor
     }
 
     # Right panel background (the container holding ButtonPanel)
-    if ($FormControls.RightPanel) {
+    if ($script:FormControls.RightPanel) {
         $color = Get-ThemeColor -PropertyName "panel_background"
-        $FormControls.RightPanel.BackColor = $color
+        $script:FormControls.RightPanel.BackColor = $color
     }
 
     # Button panel background
-    if ($FormControls.ButtonPanel) {
+    if ($script:FormControls.ButtonPanel) {
         $color = Get-ThemeColor -PropertyName "panel_background"
-        $FormControls.ButtonPanel.BackColor = $color
+        $script:FormControls.ButtonPanel.BackColor = $color
     }
 
     # Kill button
@@ -1193,12 +1183,8 @@ function Set-Theme {
     The target group object from $script:GroupsData. Contains .name, .jobs,
     and optionally .theme.
 
-.PARAMETER FormControls
-    Hashtable containing UI control references (Form, ListBox, ButtonPanel).
-    Passed through to UpdateButtonsForGroup and Apply-Theme.
-
 .EXAMPLE
-    SetGroup -Group $selectedGroup -FormControls $FormControls
+    SetGroup -Group $selectedGroup
 
 .NOTES
     Called from:
@@ -1209,23 +1195,23 @@ function Set-Theme {
     or user interaction. This function only responds to the selected group.
 #>
 function SetGroup {
-    param($Group, $FormControls)
+    param($Group)
 
     # Create buttons for this group
-    UpdateButtonsForGroup -Group $Group -FormControls $FormControls
+    UpdateButtonsForGroup -Group $Group
 
     # Get the theme name and set it
     $groupTheme = Get-GroupTheme -Group $Group
 
     # Apply theme (panel background, any other UI decorations)
-    Apply-Theme -themeName $groupTheme -FormControls $FormControls
+    Apply-Theme -themeName $groupTheme
 }
 
 function Populate-GUI {
-    param($FormControls)
 
     # Defensive check
-    if (-not $FormControls -or -not $FormControls.ContainsKey('ListBox')) {
+    #
+    if (-not $script:FormControls -or -not $script:FormControls.ContainsKey('ListBox')) {
         Write-Error "Populate-GUI: Invalid FormControls parameter. Missing ListBox."
         return
     }
@@ -1234,28 +1220,28 @@ function Populate-GUI {
     $groups = $script:GroupsData | ForEach-Object { $_.name }
 
     # Populate ListBox
-    $FormControls.ListBox.Items.Clear()
+    $script:FormControls.ListBox.Items.Clear()
     foreach ($group in $groups) {
-        $null = $FormControls.ListBox.Items.Add($group)
+        $null = $script:FormControls.ListBox.Items.Add($group)
     }
 
-    if ($FormControls.ListBox.Items.Count -gt 0) {
-        $FormControls.ListBox.SelectedIndex = 0
+    if ($script:FormControls.ListBox.Items.Count -gt 0) {
+        $script:FormControls.ListBox.SelectedIndex = 0
     }
 
     # Bind selection change event
-    $FormControls.ListBox.Add_SelectedIndexChanged({
-        if ($FormControls.ListBox.SelectedItem -and $script:GroupsData) {
-            $selectedIndex = $FormControls.ListBox.SelectedIndex
+    $script:FormControls.ListBox.Add_SelectedIndexChanged({
+        if ($script:FormControls.ListBox.SelectedItem -and $script:GroupsData) {
+            $selectedIndex = $script:FormControls.ListBox.SelectedIndex
             $selectedGroup = $script:GroupsData[$selectedIndex]
-            SetGroup -Group $selectedGroup -FormControls $FormControls
+            SetGroup -Group $selectedGroup
         }
     })
 
     # Trigger initial population
-    if ($FormControls.ListBox.Items.Count -gt 0) {
+    if ($script:FormControls.ListBox.Items.Count -gt 0) {
         $selectedGroup = $script:GroupsData[0]
-        SetGroup -Group $selectedGroup -FormControls $FormControls
+        SetGroup -Group $selectedGroup
     }
 }
 
@@ -1285,18 +1271,18 @@ function Main {
     Write-Host "DEBUG: About to call Build-GUI"
 
     # Build GUI - this returns a hashtable with Form, ListBox, ButtonPanel
-    $formControls = Build-GUI
+    $script:FormControls = Build-GUI
 
-    Write-Host "DEBUG: Build-GUI returned type: $($formControls.GetType().FullName)"
-    Write-Host "DEBUG: Build-GUI returned value: $formControls"
+    Write-Host "DEBUG: Build-GUI returned type: $($script:FormControls.GetType().FullName)"
+    Write-Host "DEBUG: Build-GUI returned value: $script:FormControls"
 
     # Verify we got valid controls
-    if ($formControls -isnot [hashtable]) {
-        Write-Host "ERROR: Build-GUI did not return a hashtable. Got: $($formControls.GetType().FullName)"
+    if ($script:FormControls -isnot [hashtable]) {
+        Write-Host "ERROR: Build-GUI did not return a hashtable. Got: $($script:FormControls.GetType().FullName)"
         exit 1
     }
 
-    if (-not $formControls.ContainsKey('Form')) {
+    if (-not $script:FormControls.ContainsKey('Form')) {
         Write-Host "ERROR: Returned hashtable missing 'Form' key"
         exit 1
     }
@@ -1304,12 +1290,12 @@ function Main {
     Write-Host "DEBUG: GUI built successfully, about to populate"
 
     # Populate with jobs - pass the entire hashtable
-    Populate-GUI -FormControls $formControls
+    Populate-GUI
 
     Write-Host "DEBUG: GUI built, setting up close handler"
 
     # Handle form closing event to kill running job if needed
-    $formControls.Form.Add_FormClosing({
+    $script:FormControls.Form.Add_FormClosing({
         param($sender, $e)
 
         if ($script:CurrentRunningJob -and $UI_ShowKillPromptOnClose) {
@@ -1343,7 +1329,7 @@ function Main {
     Write-Host "DEBUG: Starting form dialog"
 
     # Show the form
-    $formControls.Form.ShowDialog() | Out-Null
+    $script:FormControls.Form.ShowDialog() | Out-Null
 
     Write-Host "DEBUG: Form closed"
 }
