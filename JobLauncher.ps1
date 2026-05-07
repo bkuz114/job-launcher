@@ -984,10 +984,6 @@ function Get-ThemeColor {
     the job buttons. It assumes $script:JobButtons is populated with all
     current buttons.
 
-    Hover handlers are added to each button each time Apply-ThemeColors runs.
-    This is idempotent (multiple handlers set the same color) and avoids
-    complex handler removal logic.
-
     Defensive checks prevent errors if any UI control is missing.
 #>
 function Apply-ThemeColors {
