@@ -972,10 +972,6 @@ function Get-ThemeColor {
     and logs a warning. Missing color properties within a theme fall back to
     the "default" theme's values via Get-ThemeColor.
 
-.PARAMETER Group
-    The current group object from $script:GroupsData. Contains .name, .jobs,
-    and optionally .theme (string) and .color_theme (for legacy hex overrides).
-
 .PARAMETER FormControls
     Hashtable containing UI control references:
         - Form      : The main window
@@ -1001,7 +997,6 @@ function Get-ThemeColor {
 #>
 function Apply-Colors {
     param(
-        [PSObject]$Group,
         [hashtable]$FormControls
     )
 
@@ -1219,7 +1214,7 @@ function SetGroup {
     UpdateButtonsForGroup -Group $Group -FormControls $FormControls
 
     # Apply theme (panel background, any other UI decorations)
-    Apply-Colors -Group $Group -FormControls $FormControls
+    Apply-Colors -FormControls $FormControls
 }
 
 function Populate-GUI {
