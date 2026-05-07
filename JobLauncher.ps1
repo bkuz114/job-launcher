@@ -796,6 +796,7 @@ function Build-GUI {
         Form = $form
         ListBox = $listBox
         ButtonPanel = $buttonPanel
+        RightPanel = $rightPanel
     }
 
     # Explicit return
@@ -978,6 +979,12 @@ function Apply-Colors {
 
         $textColor = Get-ThemeColor -PropertyName "list_text"
         $FormControls.ListBox.ForeColor = $textColor
+    }
+
+    # Right panel background (the container holding ButtonPanel)
+    if ($FormControls.RightPanel) {
+        $color = Get-ThemeColor -PropertyName "panel_background"
+        $FormControls.RightPanel.BackColor = $color
     }
 
     # Button panel background
