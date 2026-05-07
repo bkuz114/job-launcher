@@ -752,6 +752,8 @@ function Initialize-Toolbar {
     $themeCombo = New-Object System.Windows.Forms.ComboBox
     $themeCombo.DropDownStyle = "DropDownList"
     $themeCombo.Width = 100
+    $themeCombo.DropDownHeight = 400
+    $themeCombo.IntegralHeight = $false
 
     foreach ($themeName in $Script:Themes.Keys | Sort-Object) {
         $null = $themeCombo.Items.Add($themeName)
