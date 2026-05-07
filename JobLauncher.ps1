@@ -674,40 +674,83 @@ function Load-Configuration {
 }
 
 function Build-GUI {
-
     # --- Main Form ---
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "Job Launcher"
     $form.Width = $UI_Window_Width
     $form.Height = $UI_Window_Height
     $form.StartPosition = "CenterScreen"
-    $form.FormBorderStyle = "FixedSingle"
-    $form.MaximizeBox = $true
+    $form.MinimumSize = New-Object System.Drawing.Size(600, 400)
 
-    # --- Left Panel (Groups ListBox) ---
+    # =========================================================================
+    # ROOT TABLE LAYOUT (2 rows: toolbar, content)
+    # =========================================================================
+    $rootTable = New-Object System.Windows.Forms.TableLayoutPanel
+    $rootTable.Dock = "Fill"
+    $rootTable.RowCount = 2
+    $rootTable.ColumnCount = 1
+    $rootTable.RowStyles.Clear()
+    $null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 45)))  # Toolbar
+    $null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))  # Content
+
+    # =========================================================================
+    # TOOLBAR (Row 0)
+    # =========================================================================
+    $toolbar = New-Object System.Windows.Forms.Panel
+    $toolbar.Dock = "Fill"
+
+    # Kill button (right-aligned in toolbar)
+    $killButton = New-Object System.Windows.Forms.Button
+    $killButton.Text = "Kill Current Job"
+    $killButton.Width = 120
+    $killButton.Height = 30
+    $killButton.Anchor = "Top,Right"
+    $killButton.TextAlign = "MiddleCenter"
+    $killButton.FlatStyle = "Flat"
+    $killButton.Enabled = $false
+    $killButton.Add_Click({
+        Stop-CurrentJob
+    })
+    $null = $toolbar.Controls.Add($killButton)
+
+    # =========================================================================
+    # CONTENT PANEL (Row 1) - Contains SplitContainer for left/right layout
+    # =========================================================================
+    $contentPanel = New-Object System.Windows.Forms.Panel
+    $contentPanel.Dock = "Fill"
+
+    # Split container (vertical split: group list | job buttons + output)
+    $splitContainer = New-Object System.Windows.Forms.SplitContainer
+    $splitContainer.Dock = "Fill"
+    $splitContainer.Orientation = "Vertical"
+    $splitContainer.SplitterWidth = 4
+
+    # --- LEFT PANEL (group list) ---
     $leftPanel = New-Object System.Windows.Forms.Panel
-    $leftPanel.Width = $UI_LeftPanel_Width
-    $leftPanel.Height = $form.ClientSize.Height - 10
-    $leftPanel.Location = New-Object System.Drawing.Point(5, 5)
-    $leftPanel.BorderStyle = "FixedSingle"
+    $leftPanel.Dock = "Fill"
 
-    # Groups ListBox
     $listBox = New-Object System.Windows.Forms.ListBox
     $listBox.Dock = "Fill"
     $listBox.Font = New-Object System.Drawing.Font($UI_Font_Family, $UI_Font_Size_Normal)
     $listBox.IntegralHeight = $false
-
     $null = $leftPanel.Controls.Add($listBox)
-    $null = $form.Controls.Add($leftPanel)
 
-    # --- Right Panel Container ---
+    $null = $splitContainer.Panel1.Controls.Add($leftPanel)
+
+    # --- RIGHT PANEL (job buttons + output area) ---
     $rightPanel = New-Object System.Windows.Forms.Panel
-    $rightPanel.Left = $UI_LeftPanel_Width + 10
-    $rightPanel.Width = $form.ClientSize.Width - $UI_LeftPanel_Width - 20
-    $rightPanel.Height = $form.ClientSize.Height - 10
-    $rightPanel.Top = 5
+    $rightPanel.Dock = "Fill"
 
-    # --- FlowLayoutPanel for Job Buttons ---
+    # Right panel inner layout (TableLayoutPanel for buttons + output)
+    $rightTable = New-Object System.Windows.Forms.TableLayoutPanel
+    $rightTable.Dock = "Fill"
+    $rightTable.RowCount = 2
+    $rightTable.ColumnCount = 1
+    $rightTable.RowStyles.Clear()
+    $null = $rightTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))  # Buttons area
+    $null = $rightTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, $UI_Output_Height)))  # Output area
+
+    # Button flow panel (scrollable)
     $buttonPanel = New-Object System.Windows.Forms.FlowLayoutPanel
     $buttonPanel.Dock = "Fill"
     $buttonPanel.FlowDirection = "TopDown"
@@ -715,23 +758,7 @@ function Build-GUI {
     $buttonPanel.AutoScroll = $true
     $buttonPanel.Padding = New-Object System.Windows.Forms.Padding(5)
 
-    # --- Output TextBox (at bottom, but inside right panel we need split layout) ---
-    $rightTable = New-Object System.Windows.Forms.TableLayoutPanel
-    $rightTable.Dock = "Fill"
-    $rightTable.RowCount = 2
-    $rightTable.ColumnCount = 1
-    $rightTable.RowStyles.Clear()
-
-    $rowStyle1 = New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)
-    $rowStyle2 = New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, $UI_Output_Height)
-
-    $null = $rightTable.RowStyles.Add($rowStyle1)
-    $null = $rightTable.RowStyles.Add($rowStyle2)
-
-    # Add button panel to first row
-    $null = $rightTable.Controls.Add($buttonPanel, 0, 0)
-
-    # Output textbox with scrollable area
+    # Output textbox
     $outputTextBox = New-Object System.Windows.Forms.RichTextBox
     $outputTextBox.Dock = "Fill"
     $outputTextBox.ReadOnly = $true
@@ -744,48 +771,52 @@ function Build-GUI {
     }
     $outputTextBox.Font = $outputFont
 
+    $null = $rightTable.Controls.Add($buttonPanel, 0, 0)
     $null = $rightTable.Controls.Add($outputTextBox, 0, 1)
     $null = $rightPanel.Controls.Add($rightTable)
-    $null = $form.Controls.Add($rightPanel)
 
-    # --- Status Bar at bottom of main form ---
+    $null = $splitContainer.Panel2.Controls.Add($rightPanel)
+
+    $null = $contentPanel.Controls.Add($splitContainer)
+
+    # =========================================================================
+    # STATUS STRIP (bottom of form, outside TableLayoutPanel)
+    # =========================================================================
     $statusStrip = New-Object System.Windows.Forms.StatusStrip
+    $statusStrip.Dock = "Bottom"
     $statusLabel = New-Object System.Windows.Forms.ToolStripStatusLabel
     $statusLabel.Text = "Ready"
     $null = $statusStrip.Items.Add($statusLabel)
-    $null = $form.Controls.Add($statusStrip)
 
-    # --- Kill Job Button (on main form toolbar area) ---
-    $killButton = New-Object System.Windows.Forms.Button
-    $killButton.Text = "Kill Current Job"
-    $killButton.Width = 120
-    $killButton.Height = 30
-    $killButton.Left = $form.ClientSize.Width - 130
-    $killButton.Top = $statusStrip.Top - 35
-    $killButton.FlatStyle = "Flat"
-    $killButton.Enabled = $false
-    $killButton.Add_Click({
-        Stop-CurrentJob
-    })
-    $null = $form.Controls.Add($killButton)
+    # =========================================================================
+    # ASSEMBLE THE FORM
+    # =========================================================================
+    $null = $rootTable.Controls.Add($toolbar, 0, 0)
+    $null = $rootTable.Controls.Add($contentPanel, 0, 1)
+    $null = $form.Controls.Add($rootTable)
+    $null = $form.Controls.Add($statusStrip)  # Added last, docks to bottom automatically
 
-    # Store references in script scope
+    # =========================================================================
+    # STORE REFERENCES IN SCRIPT SCOPE (globals for wide access)
+    # =========================================================================
     $script:OutputTextBox = $outputTextBox
     $script:StatusLabel = $statusLabel
     $script:KillButton = $killButton
     $script:MainForm = $form
     $script:GroupListBox = $listBox
 
-    # Build and explicitly return the hashtable
-    $result = @{
-        Form = $form
-        ListBox = $listBox
-        ButtonPanel = $buttonPanel
-        RightPanel = $rightPanel
+    # =========================================================================
+    # RETURN CONTROLS FOR FUNCTIONS THAT NEED THEM
+    # =========================================================================
+    $formControls = @{
+        Form         = $form
+        ListBox      = $listBox
+        ButtonPanel  = $buttonPanel
+        RightPanel   = $rightPanel
+        Toolbar      = $toolbar
     }
 
-    # Explicit return
-    return $result
+    return $formControls
 }
 
 function UpdateButtonsForGroup {
