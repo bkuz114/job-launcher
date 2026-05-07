@@ -35,6 +35,8 @@ $script:UserSelectedTheme = $null
 # Built-in default theme (always available)
 $script:DefaultTheme = @{
     form_background   = "#F0F0F0"
+    toolbar_background = "#F0F0F0"
+    toolbar_text      = "#000000"
     list_background   = "#FFFFFF"
     list_text         = "#000000"
     panel_background  = "#F0F0F0"
@@ -1063,6 +1065,15 @@ function Apply-Theme {
     if ($script:FormControls.Form) {
         $color = Get-ThemeColor -PropertyName "form_background"
         $script:FormControls.Form.BackColor = $color
+    }
+
+    # Toolbar
+    if ($script:FormControls.Toolbar) {
+        $color = Get-ThemeColor -PropertyName "toolbar_background"
+        $script:FormControls.Toolbar.BackColor = $color
+
+        $textColor = Get-ThemeColor -PropertyName "toolbar_text"
+        $script:FormControls.Toolbar.ForeColor = $textColor
     }
 
     # Left button panel (group list)

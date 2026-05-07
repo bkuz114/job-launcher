@@ -1,6 +1,8 @@
 {
   "dark": {
     "form_background": "#1E1E1E",
+    "toolbar_background": "#1E1E1E",
+    "toolbar_text": "#E0E0E0",
     "list_background": "#252525",
     "list_text": "#E0E0E0",
     "panel_background": "#2D2D2D",
@@ -19,6 +21,8 @@
   },
   "ocean": {
     "form_background": "#0A192F",
+    "toolbar_background": "#0A192F",
+    "toolbar_text": "#E6F1FF",
     "list_background": "#112240",
     "list_text": "#E6F1FF",
     "panel_background": "#1A365D",
@@ -37,6 +41,8 @@
   },
   "blue_gold": {
     "form_background": "#0D1B2A",
+	"toolbar_background": "#F4D03F",
+	"toolbar_text": "#2C3E50",
     "list_background": "#1B263B",
     "list_text": "#E0E1DD",
     "panel_background": "#2C3E50",
@@ -55,6 +61,8 @@
   },
   "blue_pink": {
     "form_background": "#1A0B2E",
+    "toolbar_background": "#1A0B2E",
+    "toolbar_text": "#F0E6FF",
     "list_background": "#24153A",
     "list_text": "#F0E6FF",
     "panel_background": "#3D1C5A",
@@ -73,6 +81,8 @@
   },
   "forest": {
     "form_background": "#1A2E1A",
+    "toolbar_background": "#1A2E1A",
+    "toolbar_text": "#D4E8D4",
     "list_background": "#243624",
     "list_text": "#E0E8E0",
     "panel_background": "#2E4A2E",
@@ -91,6 +101,8 @@
   },
   "sunset": {
     "form_background": "#2D1B2E",
+    "toolbar_background": "#2D1B2E",
+    "toolbar_text": "#FCE6D4",
     "list_background": "#3D1F3D",
     "list_text": "#FCE6D4",
     "panel_background": "#5C2E4A",
