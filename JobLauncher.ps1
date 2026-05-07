@@ -675,20 +675,12 @@ function Load-Configuration {
 
 function Build-GUI {
 
-    # current theme colors
-    $UI_Color_Background = Get-ThemeColor -PropertyName "form_background"
-    $UI_Color_Panel = Get-ThemeColor -PropertyName "list_background"
-    $UI_Color_OutputBackground = Get-ThemeColor -PropertyName "output_background"
-    $UI_Color_OutputText = Get-ThemeColor -PropertyName "output_text"
-    $UI_Color_Button = Get-ThemeColor -PropertyName "button"
-
     # --- Main Form ---
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "Job Launcher"
     $form.Width = $UI_Window_Width
     $form.Height = $UI_Window_Height
     $form.StartPosition = "CenterScreen"
-    $form.BackColor = $UI_Color_Background
     $form.FormBorderStyle = "FixedSingle"
     $form.MaximizeBox = $true
 
@@ -697,7 +689,6 @@ function Build-GUI {
     $leftPanel.Width = $UI_LeftPanel_Width
     $leftPanel.Height = $form.ClientSize.Height - 10
     $leftPanel.Location = New-Object System.Drawing.Point(5, 5)
-    $leftPanel.BackColor = $UI_Color_Panel
     $leftPanel.BorderStyle = "FixedSingle"
 
     # Groups ListBox
@@ -715,7 +706,6 @@ function Build-GUI {
     $rightPanel.Width = $form.ClientSize.Width - $UI_LeftPanel_Width - 20
     $rightPanel.Height = $form.ClientSize.Height - 10
     $rightPanel.Top = 5
-    $rightPanel.BackColor = $UI_Color_Background
 
     # --- FlowLayoutPanel for Job Buttons ---
     $buttonPanel = New-Object System.Windows.Forms.FlowLayoutPanel
@@ -723,7 +713,6 @@ function Build-GUI {
     $buttonPanel.FlowDirection = "TopDown"
     $buttonPanel.WrapContents = $true
     $buttonPanel.AutoScroll = $true
-    $buttonPanel.BackColor = $UI_Color_Background
     $buttonPanel.Padding = New-Object System.Windows.Forms.Padding(5)
 
     # --- Output TextBox (at bottom, but inside right panel we need split layout) ---
@@ -745,8 +734,6 @@ function Build-GUI {
     # Output textbox with scrollable area
     $outputTextBox = New-Object System.Windows.Forms.RichTextBox
     $outputTextBox.Dock = "Fill"
-    $outputTextBox.BackColor = $UI_Color_OutputBackground
-    $outputTextBox.ForeColor = $UI_Color_OutputText
     $outputTextBox.ReadOnly = $true
     $outputTextBox.BorderStyle = "FixedSingle"
 
@@ -765,7 +752,6 @@ function Build-GUI {
     $statusStrip = New-Object System.Windows.Forms.StatusStrip
     $statusLabel = New-Object System.Windows.Forms.ToolStripStatusLabel
     $statusLabel.Text = "Ready"
-    $statusLabel.ForeColor = $UI_Color_Background
     $null = $statusStrip.Items.Add($statusLabel)
     $null = $form.Controls.Add($statusStrip)
 
@@ -776,7 +762,6 @@ function Build-GUI {
     $killButton.Height = 30
     $killButton.Left = $form.ClientSize.Width - 130
     $killButton.Top = $statusStrip.Top - 35
-    $killButton.BackColor = $UI_Color_Button
     $killButton.FlatStyle = "Flat"
     $killButton.Enabled = $false
     $killButton.Add_Click({
