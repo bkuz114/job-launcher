@@ -698,29 +698,18 @@ function Load-Configuration {
     }
 }
 
-function Build-GUI {
-    # --- Main Form ---
-    $form = New-Object System.Windows.Forms.Form
-    $form.Text = "Job Launcher"
-    $form.Width = $UI_Window_Width
-    $form.Height = $UI_Window_Height
-    $form.StartPosition = "CenterScreen"
-    $form.MinimumSize = New-Object System.Drawing.Size(600, 400)
-
-    # =========================================================================
-    # ROOT TABLE LAYOUT (2 rows: toolbar, content)
-    # =========================================================================
-    $rootTable = New-Object System.Windows.Forms.TableLayoutPanel
-    $rootTable.Dock = "Fill"
-    $rootTable.RowCount = 2
-    $rootTable.ColumnCount = 1
-    $rootTable.RowStyles.Clear()
-    $null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 45)))  # Toolbar
-    $null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))  # Content
-
-    # =========================================================================
-    # TOOLBAR (Row 0)
-    # =========================================================================
+<#
+.SYNOPSIS
+    Creates and configures the toolbar with theme selector and kill button.
+.DESCRIPTION
+    Returns a TableLayoutPanel configured with three columns:
+    - Column 0: Theme label + dropdown (AutoSize)
+    - Column 1: Spacer (Percent = 100%, pushes kill button right)
+    - Column 2: Kill button (AutoSize)
+.PARAMETER Form
+    The main form (used for positioning calculations if needed, though TableLayoutPanel handles it).
+#>
+function Initialize-Toolbar {
     $toolbar = New-Object System.Windows.Forms.Panel
     $toolbar.Dock = "Fill"
 
@@ -738,42 +727,64 @@ function Build-GUI {
     })
     $null = $toolbar.Controls.Add($killButton)
 
+    return $toolbar
+}
+
+function Build-GUI {
+    # --- Main Form ---
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = "Job Launcher"
+    $form.Width = $UI_Window_Width
+    $form.Height = $UI_Window_Height
+    $form.StartPosition = "CenterScreen"
+    $form.MinimumSize = New-Object System.Drawing.Size(600, 400)
+
+    # =========================================================================
+    # ROOT TABLE LAYOUT (2 rows: toolbar, content)
+    # =========================================================================
+    $rootTable = New-Object System.Windows.Forms.TableLayoutPanel
+    $rootTable.Dock = "Fill"
+    $rootTable.AutoSize = $false
+    $rootTable.RowCount = 2
+    $rootTable.ColumnCount = 1
+    $rootTable.RowStyles.Clear()
+    #$null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))  # Toolbar
+    $null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 40)))  # Toolbar
+    $null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100))) # Content
+
+    # =========================================================================
+    # TOOLBAR (Row 0)
+    # =========================================================================
+    $toolbar = Initialize-Toolbar
+    $null = $rootTable.Controls.Add($toolbar, 0, 0)
+
     # =========================================================================
     # CONTENT PANEL (Row 1) - Contains SplitContainer for left/right layout
     # =========================================================================
     $contentPanel = New-Object System.Windows.Forms.Panel
     $contentPanel.Dock = "Fill"
+    $contentPanel.AutoSize = $false
 
-    # Split container (vertical split: group list | job buttons + output)
+    # SplitContainer
     $splitContainer = New-Object System.Windows.Forms.SplitContainer
     $splitContainer.Dock = "Fill"
     $splitContainer.Orientation = "Vertical"
-    $splitContainer.SplitterWidth = 4
 
     # --- LEFT PANEL (group list) ---
-    $leftPanel = New-Object System.Windows.Forms.Panel
-    $leftPanel.Dock = "Fill"
-
     $listBox = New-Object System.Windows.Forms.ListBox
     $listBox.Dock = "Fill"
     $listBox.Font = New-Object System.Drawing.Font($UI_Font_Family, $UI_Font_Size_Normal)
     $listBox.IntegralHeight = $false
-    $null = $leftPanel.Controls.Add($listBox)
-
-    $null = $splitContainer.Panel1.Controls.Add($leftPanel)
+    $null = $splitContainer.Panel1.Controls.Add($listBox)
 
     # --- RIGHT PANEL (job buttons + output area) ---
-    $rightPanel = New-Object System.Windows.Forms.Panel
+    $rightPanel = New-Object System.Windows.Forms.TableLayoutPanel
     $rightPanel.Dock = "Fill"
-
-    # Right panel inner layout (TableLayoutPanel for buttons + output)
-    $rightTable = New-Object System.Windows.Forms.TableLayoutPanel
-    $rightTable.Dock = "Fill"
-    $rightTable.RowCount = 2
-    $rightTable.ColumnCount = 1
-    $rightTable.RowStyles.Clear()
-    $null = $rightTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))  # Buttons area
-    $null = $rightTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, $UI_Output_Height)))  # Output area
+    $rightPanel.RowCount = 2
+    $rightPanel.ColumnCount = 1
+    $rightPanel.RowStyles.Clear()
+    $null = $rightPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+    $null = $rightPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, $UI_Output_Height)))
 
     # Button flow panel (scrollable)
     $buttonPanel = New-Object System.Windows.Forms.FlowLayoutPanel
@@ -782,6 +793,7 @@ function Build-GUI {
     $buttonPanel.WrapContents = $true
     $buttonPanel.AutoScroll = $true
     $buttonPanel.Padding = New-Object System.Windows.Forms.Padding(5)
+    $null = $rightPanel.Controls.Add($buttonPanel, 0, 0)
 
     # Output textbox
     $outputTextBox = New-Object System.Windows.Forms.RichTextBox
@@ -796,13 +808,10 @@ function Build-GUI {
     }
     $outputTextBox.Font = $outputFont
 
-    $null = $rightTable.Controls.Add($buttonPanel, 0, 0)
-    $null = $rightTable.Controls.Add($outputTextBox, 0, 1)
-    $null = $rightPanel.Controls.Add($rightTable)
-
+    $null = $rightPanel.Controls.Add($outputTextBox, 0, 1)
     $null = $splitContainer.Panel2.Controls.Add($rightPanel)
-
     $null = $contentPanel.Controls.Add($splitContainer)
+    $null = $rootTable.Controls.Add($contentPanel, 0, 1)
 
     # =========================================================================
     # STATUS STRIP (bottom of form, outside TableLayoutPanel)
@@ -811,13 +820,10 @@ function Build-GUI {
     $statusStrip.Dock = "Bottom"
     $statusLabel = New-Object System.Windows.Forms.ToolStripStatusLabel
     $statusLabel.Text = "Ready"
-    $null = $statusStrip.Items.Add($statusLabel)
 
     # =========================================================================
     # ASSEMBLE THE FORM
     # =========================================================================
-    $null = $rootTable.Controls.Add($toolbar, 0, 0)
-    $null = $rootTable.Controls.Add($contentPanel, 0, 1)
     $null = $form.Controls.Add($rootTable)
     #$null = $form.Controls.Add($statusStrip)  # Added last, docks to bottom automatically
 
@@ -826,9 +832,9 @@ function Build-GUI {
     # =========================================================================
     $script:OutputTextBox = $outputTextBox
     $script:StatusLabel = $statusLabel
-    $script:KillButton = $killButton
-    $script:MainForm = $form
     $script:GroupListBox = $listBox
+    $script:MainForm = $form
+    $script:ButtonPanel = $buttonPanel
 
     # =========================================================================
     # RETURN CONTROLS FOR FUNCTIONS THAT NEED THEM
