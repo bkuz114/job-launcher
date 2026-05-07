@@ -28,65 +28,22 @@ $script:FormControls = $null
 
 $script:KillRequested = $false
 
-# =============================================================================
-# NAMED THEMES
-# =============================================================================
-
-$Script:Themes = @{
-    "default" = @{
-        form_background   = "#F0F0F0"
-        list_background   = "#FFFFFF"
-        list_text         = "#000000"
-        panel_background  = "#F0F0F0"
-        button            = "#DCE6F0"
-        button_hover      = "#C8D7E6"
-        button_text       = "#000000"
-        button_running    = "#FFC107"
-        kill_button       = "#DCE6F0"
-        kill_button_text  = "#000000"
-        output_background = "#1E1E1E"
-        output_text       = "#E0E0E0"
-        status_text       = "#000000"   # Black on light background
-        status_ok         = "#28A745"
-        status_error      = "#DC3545"
-        status_running    = "#FFC107"
-    }
-    "dark" = @{
-        form_background   = "#1E1E1E"
-        list_background   = "#252525"
-        list_text         = "#E0E0E0"
-        panel_background  = "#2D2D2D"
-        button            = "#3C3C3C"
-        button_hover      = "#505050"
-        button_text       = "#E0E0E0"
-        button_running    = "#FFC107"
-        kill_button       = "#3C3C3C"
-        kill_button_text  = "#E0E0E0"
-        output_background = "#1A1A1A"
-        output_text       = "#C0C0C0"
-        status_text       = "#E0E0E0"   # Light gray on dark background
-        status_ok         = "#28A745"
-        status_error      = "#DC3545"
-        status_running    = "#FFC107"
-    }
-    "ocean" = @{
-        form_background   = "#0A192F"
-        list_background   = "#112240"
-        list_text         = "#E6F1FF"
-        panel_background  = "#1A365D"
-        button            = "#2A4B7C"
-        button_hover      = "#3A6B9C"
-        button_text       = "#E6F1FF"
-        button_running    = "#FFB800"
-        kill_button       = "#2A4B7C"
-        kill_button_text  = "#E6F1FF"
-        output_background = "#0A192F"
-        output_text       = "#E6F1FF"
-        status_text       = "#E6F1FF"   # Soft light blue on dark blue background
-        status_ok         = "#28A745"
-        status_error      = "#DC3545"
-        status_running    = "#FFC107"
-    }
+# Built-in default theme (always available)
+$script:DefaultTheme = @{
+    form_background   = "#F0F0F0"
+    list_background   = "#FFFFFF"
+    list_text         = "#000000"
+    panel_background  = "#F0F0F0"
+    button            = "#DCE6F0"
+    button_hover      = "#C8D7E6"
+    button_text       = "#000000"
+    button_running    = "#FFC107"
+    output_background = "#1E1E1E"
+    output_text       = "#E0E0E0"
+    status_text       = "#000000"
+    status_ok         = "#28A745"
+    status_error      = "#DC3545"
+    status_running    = "#FFC107"
 }
 
 # =============================================================================
@@ -643,6 +600,55 @@ function Stop-CurrentJob {
         $script:KillRequested = $false
         Set-JobButtonsEnabled -Enabled $true
         Update-Status "Ready" $UI_Color_Background
+    }
+}
+
+<#
+.SYNOPSIS
+    Loads user-defined themes from themes.json, falls back to built-in default.
+.DESCRIPTION
+    Reads themes.json from the script directory. If the file exists and contains
+    a valid JSON object, merges those themes into $Script:Themes.
+    The built-in default theme is always available as a fallback.
+.NOTES
+    themes.json format:
+    {
+        "dark": { "form_background": "#1E1E1E", ... },
+        "ocean": { "form_background": "#0A192F", ... }
+    }
+    A theme named "default" in themes.json will override the built-in default.
+#>
+function Load-Themes {
+
+    # Initialize themes hashtable with built-in default
+    $script:Themes = @{
+        "default" = $script:DefaultTheme
+    }
+
+    # Path to themes.json
+    $scriptDirectory = Split-Path -Path $script:MyInvocation.MyCommand.Path -Parent
+    $themesPath = Join-Path -Path $scriptDirectory -ChildPath "themes.json"
+
+    if (-not (Test-Path -Path $themesPath)) {
+        Write-Host "No themes.json found. Using built-in default theme."
+        return
+    }
+
+    try {
+        $jsonContent = Get-Content -Path $themesPath -Raw -Encoding UTF8
+        $userThemes = $jsonContent | ConvertFrom-Json
+
+        foreach ($themeName in $userThemes.PSObject.Properties) {
+            $themeData = @{}
+            $themeName.Value.PSObject.Properties | ForEach-Object {
+                $themeData[$_.Name] = $_.Value
+            }
+            $script:Themes[$themeName.Name] = $themeData
+            Write-Host "Loaded theme: $($themeName.Name)"
+        }
+    }
+    catch {
+        Write-Host "Warning: Failed to load themes.json - $($_.Exception.Message)"
     }
 }
 
@@ -1272,6 +1278,9 @@ function Main {
         Write-Host "DEBUG: Configuration load failed, exiting"
         exit 1
     }
+
+    # Load themes from themes.json (or use built-in default)
+    Load-Themes
 
     # Set intial theme
     Initialize-Theme

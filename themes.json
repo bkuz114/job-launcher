@@ -1,0 +1,34 @@
+{
+  "dark": {
+    "form_background": "#1E1E1E",
+    "list_background": "#252525",
+    "list_text": "#E0E0E0",
+    "panel_background": "#2D2D2D",
+    "button": "#3C3C3C",
+    "button_hover": "#505050",
+    "button_text": "#E0E0E0",
+    "button_running": "#FFC107",
+    "output_background": "#1A1A1A",
+    "output_text": "#C0C0C0",
+    "status_text": "#E0E0E0",
+    "status_ok": "#28A745",
+    "status_error": "#DC3545",
+    "status_running": "#FFC107"
+  },
+  "ocean": {
+    "form_background": "#0A192F",
+    "list_background": "#112240",
+    "list_text": "#E6F1FF",
+    "panel_background": "#1A365D",
+    "button": "#2A4B7C",
+    "button_hover": "#3A6B9C",
+    "button_text": "#E6F1FF",
+    "button_running": "#FFB800",
+    "output_background": "#0A192F",
+    "output_text": "#E6F1FF",
+    "status_text": "#E6F1FF",
+    "status_ok": "#28A745",
+    "status_error": "#DC3545",
+    "status_running": "#FFC107"
+  }
+}
