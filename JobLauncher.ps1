@@ -967,6 +967,9 @@ function Get-ThemeColor {
     and logs a warning. Missing color properties within a theme fall back to
     the "default" theme's values via Get-ThemeColor.
 
+.PARAMETER themeName
+    The name of the theme to activate (must be a key in $Script:Themes).
+
 .PARAMETER FormControls
     Hashtable containing UI control references:
         - Form      : The main window
@@ -977,7 +980,7 @@ function Get-ThemeColor {
     $script:StatusLabel are also used.
 
 .EXAMPLE
-    Apply-ThemeColors -FormControls $FormControls
+    Apply-Theme -themeName "default" -FormControls $FormControls
 
 .NOTES
     This function is called by SetGroup after UpdateButtonsForGroup has created
@@ -986,10 +989,14 @@ function Get-ThemeColor {
 
     Defensive checks prevent errors if any UI control is missing.
 #>
-function Apply-ThemeColors {
+function Apply-Theme {
     param(
+        [string]$themeName,
         [hashtable]$FormControls
     )
+
+    # Set the theme globally first
+    Set-Theme -themeName $ThemeName
 
     # === Apply colors to each UI element ===
 
@@ -1152,7 +1159,7 @@ function Get-GroupTheme {
     Set-Theme "ocean"
 
 .NOTES
-    This function does NOT update any UI elements. Call Apply-ThemeColors
+    This function does NOT update any UI elements. Call Apply-Theme
     separately to refresh the interface after changing the theme.
 #>
 function Set-Theme {
@@ -1177,7 +1184,7 @@ function Set-Theme {
 
     Steps performed:
     1. Recreates all job buttons for the new group (UpdateButtonsForGroup)
-    2. Applies color theme to all UI elements (Apply-ThemeColors)
+    2. Applies color theme to all UI elements (Apply-Theme)
 
     Separating button recreation from theme application keeps concerns clean
     and allows theme to be reapplied without rebuilding buttons if needed.
@@ -1188,7 +1195,7 @@ function Set-Theme {
 
 .PARAMETER FormControls
     Hashtable containing UI control references (Form, ListBox, ButtonPanel).
-    Passed through to UpdateButtonsForGroup and Apply-ThemeColors.
+    Passed through to UpdateButtonsForGroup and Apply-Theme.
 
 .EXAMPLE
     SetGroup -Group $selectedGroup -FormControls $FormControls
@@ -1204,15 +1211,14 @@ function Set-Theme {
 function SetGroup {
     param($Group, $FormControls)
 
-    # Get the theme name and set it
-    $groupTheme = Get-GroupTheme -Group $Group
-    Set-Theme -themeName $groupTheme
-
     # Create buttons for this group
     UpdateButtonsForGroup -Group $Group -FormControls $FormControls
 
+    # Get the theme name and set it
+    $groupTheme = Get-GroupTheme -Group $Group
+
     # Apply theme (panel background, any other UI decorations)
-    Apply-ThemeColors -FormControls $FormControls
+    Apply-Theme -themeName $groupTheme -FormControls $FormControls
 }
 
 function Populate-GUI {
