@@ -735,6 +735,8 @@ function Initialize-Toolbar {
     })
     $null = $toolbar.Controls.Add($killButton)
 
+    $script:KillButton = $killButton
+
     return $toolbar
 }
 
