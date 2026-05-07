@@ -852,17 +852,12 @@ function UpdateButtonsForGroup {
     # Direct access to jobs from the group object (no filtering needed)
     $jobs = $Group.jobs
 
-    $UI_Color_Button = Get-ThemeColor -PropertyName "button"
-    $UI_Color_Button_Text = Get-ThemeColor -PropertyName "button_text"
-
     foreach ($job in $jobs) {
         $btn = New-Object System.Windows.Forms.Button
         $btn.Text = $job.name
         $btn.Height = $UI_Button_Height
         $btn.Width = $FormControls.ButtonPanel.Width - 20
         $btn.TextAlign = "MiddleLeft"
-        $btn.BackColor = $UI_Color_Button
-        $btn.ForeColor = $UI_Color_Button_Text
         $btn.FlatStyle = "Flat"
         $btn.Margin = New-Object System.Windows.Forms.Padding($UI_Button_Margin)
 
@@ -1052,6 +1047,15 @@ function Apply-ThemeColors {
     if ($script:StatusLabel) {
         $color = Get-ThemeColor -PropertyName "status_text"
         $script:StatusLabel.ForeColor = $color
+    }
+
+    # Job buttons
+    $buttonColor = Get-ThemeColor -PropertyName "button"
+    $textColor = Get-ThemeColor -PropertyName "button_text"
+
+    foreach ($btn in $script:JobButtons.Values) {
+        $btn.BackColor = $buttonColor
+        $btn.ForeColor = $textColor
     }
 }
 
