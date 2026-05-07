@@ -1088,13 +1088,11 @@ function Initialize-Theme {
 
     # Validate theme exists
     if ($Script:Themes.ContainsKey($initialThemeName)) {
-        $script:CurrentThemeName = $initialThemeName
-        $script:CurrentThemePalette = $Script:Themes[$initialThemeName]
+        Set-Theme $initialThemeName
         Write-Host "DEBUG: initial theme set to: $initialThemeName"
     } else {
         Write-Host "WARNING: Theme '$initialThemeName' not found. Fallback to default."
-        $script:CurrentThemeName = "default"
-        $script:CurrentThemePalette = $Script:Themes["default"]
+        Set-Theme "default"
     }
 }
 
