@@ -982,20 +982,20 @@ function Get-ThemeColor {
     $script:StatusLabel are also used.
 
 .EXAMPLE
-    Apply-Colors -Group $selectedGroup -FormControls $FormControls
+    Apply-ThemeColors -FormControls $FormControls
 
 .NOTES
     This function is called by SetGroup after UpdateButtonsForGroup has created
     the job buttons. It assumes $script:JobButtons is populated with all
     current buttons.
 
-    Hover handlers are added to each button each time Apply-Colors runs.
+    Hover handlers are added to each button each time Apply-ThemeColors runs.
     This is idempotent (multiple handlers set the same color) and avoids
     complex handler removal logic.
 
     Defensive checks prevent errors if any UI control is missing.
 #>
-function Apply-Colors {
+function Apply-ThemeColors {
     param(
         [hashtable]$FormControls
     )
@@ -1154,7 +1154,7 @@ function Get-GroupTheme {
     Set-Theme "ocean"
 
 .NOTES
-    This function does NOT update any UI elements. Call Apply-Colors
+    This function does NOT update any UI elements. Call Apply-ThemeColors
     separately to refresh the interface after changing the theme.
 #>
 function Set-Theme {
@@ -1179,7 +1179,7 @@ function Set-Theme {
 
     Steps performed:
     1. Recreates all job buttons for the new group (UpdateButtonsForGroup)
-    2. Applies color theme to all UI elements (Apply-Colors)
+    2. Applies color theme to all UI elements (Apply-ThemeColors)
 
     Separating button recreation from theme application keeps concerns clean
     and allows theme to be reapplied without rebuilding buttons if needed.
@@ -1190,7 +1190,7 @@ function Set-Theme {
 
 .PARAMETER FormControls
     Hashtable containing UI control references (Form, ListBox, ButtonPanel).
-    Passed through to UpdateButtonsForGroup and Apply-Colors.
+    Passed through to UpdateButtonsForGroup and Apply-ThemeColors.
 
 .EXAMPLE
     SetGroup -Group $selectedGroup -FormControls $FormControls
@@ -1214,7 +1214,7 @@ function SetGroup {
     UpdateButtonsForGroup -Group $Group -FormControls $FormControls
 
     # Apply theme (panel background, any other UI decorations)
-    Apply-Colors -FormControls $FormControls
+    Apply-ThemeColors -FormControls $FormControls
 }
 
 function Populate-GUI {
