@@ -28,6 +28,10 @@ $script:FormControls = $null
 
 $script:KillRequested = $false
 
+# theme name user selects from the theme dropdown (if they make a selection)
+# need to prevent group switching JSON from overriding their selection
+$script:UserSelectedTheme = $null
+
 # Built-in default theme (always available)
 $script:DefaultTheme = @{
     form_background   = "#F0F0F0"
@@ -718,23 +722,70 @@ function Load-Configuration {
     The main form (used for positioning calculations if needed, though TableLayoutPanel handles it).
 #>
 function Initialize-Toolbar {
-    $toolbar = New-Object System.Windows.Forms.Panel
-    $toolbar.Dock = "Fill"
+    $toolbar = New-Object System.Windows.Forms.TableLayoutPanel
+    $toolbar.RowCount = 1
+    $toolbar.RowStyles.Clear()
+    $null = $toolbar.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))
+    $toolbar.Dock = "Top"
+    #$toolbar.AutoSize = $true
+    $toolbar.AutoSize = $false
+    #$toolbar.AutoSizeMode = "GrowAndShrink"
+    $toolbar.ColumnCount = 3
+    $toolbar.ColumnStyles.Clear()
+    $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))
+    $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+    $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))
 
-    # Kill button (right-aligned in toolbar)
+    # === Column 0: Theme selector ===
+    $themePanel = New-Object System.Windows.Forms.FlowLayoutPanel
+    $themePanel.AutoSize = $true
+    $themePanel.FlowDirection = "LeftToRight"
+    $themePanel.Margin = New-Object System.Windows.Forms.Padding(5, 0, 5, 0)
+
+    $themeLabel = New-Object System.Windows.Forms.Label
+    $themeLabel.Text = "Theme:"
+    $themeLabel.AutoSize = $true
+
+    $themeCombo = New-Object System.Windows.Forms.ComboBox
+    $themeCombo.DropDownStyle = "DropDownList"
+    $themeCombo.Width = 100
+
+    foreach ($themeName in $Script:Themes.Keys | Sort-Object) {
+        $null = $themeCombo.Items.Add($themeName)
+    }
+    $themeCombo.SelectedItem = $script:CurrentThemeName
+
+    $themeCombo.Add_SelectedIndexChanged({
+        $selected = $this.SelectedItem.ToString()
+        Apply-Theme -themeName $selected
+        # set user selected theme so group switching won't override it
+        $script:UserSelectedTheme = $this.SelectedItem.ToString()
+    })
+
+    $null = $themePanel.Controls.Add($themeLabel)
+    $null = $themePanel.Controls.Add($themeCombo)
+    $null = $toolbar.Controls.Add($themePanel, 0, 0)
+
+    # === Column 1: Spacer ===
+    $spacer = New-Object System.Windows.Forms.Panel
+    $spacer.Dock = "Fill"
+    #$spacer.Margin = New-Object System.Windows.Forms.Padding(0)
+    $null = $toolbar.Controls.Add($spacer, 1, 0)
+
+    # === Column 2: Kill button ===
     $killButton = New-Object System.Windows.Forms.Button
     $killButton.Text = "Kill Current Job"
-    $killButton.Width = 120
-    $killButton.Height = 30
-    $killButton.Anchor = "Top,Right"
-    $killButton.TextAlign = "MiddleCenter"
+    $killButton.AutoSize = $true
+    $killButton.AutoSizeMode = "GrowAndShrink"
+    $killButton.Padding = New-Object System.Windows.Forms.Padding(10, 5, 10, 5)
     $killButton.FlatStyle = "Flat"
+    $killButton.Margin = New-Object System.Windows.Forms.Padding(5, 0, 5, 0)
     $killButton.Enabled = $false
     $killButton.Add_Click({
         Stop-CurrentJob
     })
-    $null = $toolbar.Controls.Add($killButton)
 
+    $null = $toolbar.Controls.Add($killButton, 2, 0)
     $script:KillButton = $killButton
 
     return $toolbar
@@ -761,7 +812,7 @@ function Build-GUI {
     #$null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))  # Toolbar
     # following line that's commented out: when i actually add the toolbar, the height is excessive. the solution is to get rid of
     # audoSize and instead use this fixed height. Since I'm not actually adding the toolbar in, I'm using AutoSize so that it doesn't take space
-    $null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 40)))  # Toolbar
+    $null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 45)))  # Toolbar
     $null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100))) # Content
 
     # =========================================================================
@@ -1133,6 +1184,11 @@ function Initialize-Theme {
 #>
 function Get-GroupTheme {
     param([PSObject]$Group)
+
+    # User override takes highest priority
+    if ($script:UserSelectedTheme) {
+        return $script:UserSelectedTheme
+    }
 
     # Resolve theme name (group > settings > "default")
     if ($Group.PSObject.Properties['theme'] -and $Group.theme) {
