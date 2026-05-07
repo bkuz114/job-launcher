@@ -1100,7 +1100,6 @@ function Apply-Theme {
 
     # Kill button
     if ($script:KillButton) {
-        Write-OutputWithTimestamp "DEBUG: Coloring Kill button. Current enabled state: $($script:KillButton.Enabled)"
         $color = Get-ThemeColor -PropertyName "kill_button"
         $script:KillButton.BackColor = $color
 
