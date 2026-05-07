@@ -748,15 +748,17 @@ function Build-GUI {
     $rootTable.RowCount = 2
     $rootTable.ColumnCount = 1
     $rootTable.RowStyles.Clear()
-    #$null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))  # Toolbar
-    $null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 40)))  # Toolbar
+    $null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))  # Toolbar
+    # following line that's commented out: when i actually add the toolbar, the height is excessive. the solution is to get rid of
+    # audoSize and instead use this fixed height. Since I'm not actually adding the toolbar in, I'm using AutoSize so that it doesn't take space
+    #$null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 40)))  # Toolbar
     $null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100))) # Content
 
     # =========================================================================
     # TOOLBAR (Row 0)
     # =========================================================================
     $toolbar = Initialize-Toolbar
-    $null = $rootTable.Controls.Add($toolbar, 0, 0)
+    #$null = $rootTable.Controls.Add($toolbar, 0, 0)
 
     # =========================================================================
     # CONTENT PANEL (Row 1) - Contains SplitContainer for left/right layout
