@@ -106,6 +106,8 @@ $DefaultLogsDirectory = Join-Path -Path (Split-Path -Path $script:MyInvocation.M
 
 # Script-scoped variables (not global scope, but accessible to functions defined below)
 $script:CurrentRunningJob = $null           # Hashtable with: Process, JobName, Button, StartTime
+$script:GroupsData = $null                  # Parsed JSON groups array
+$script:HasCategories = $false              # If Parsed JSON has top level "categories"
 $script:Settings = $null                    # Parsed JSON settings object
 $script:OutputTextBox = $null               # Reference to UI control
 $script:StatusLabel = $null                 # Reference to UI control
@@ -685,6 +687,148 @@ function Load-Themes {
     }
 }
 
+<#
+.SYNOPSIS
+    Loads and validates a hierarchical configuration with categories, groups, and jobs.
+
+.DESCRIPTION
+    Processes the JSON configuration when it contains a "categories" array.
+    Each category contains a "groups" array, and each group contains a "jobs" array.
+
+    Builds $script:ListItems with two item types:
+    - Type "divider" for category headers (non-selectable, visual separation)
+    - Type "group" for selectable groups (stores original group object in .Group)
+
+    Throws terminating errors for any missing required fields or empty collections.
+
+.PARAMETER Config
+    The PSCustomObject from ConvertFrom-Json containing the full configuration.
+
+.EXAMPLE
+    Load-HierarchicalConfig -Config $config
+
+.NOTES
+    Sets $script:ListItems. Caller is responsible for setting $script:HasCategories = $true.
+    Does NOT set $script:Settings – that is handled separately in Load-Configuration.
+#>
+function Load-HierarchicalConfig {
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSObject]$Config
+    )
+
+    if (-not $config.categories) { throw "Missing 'categories' array" }
+    if ($config.categories.Count -eq 0) { throw "No categories defined" }
+
+    $script:ListItems = @()
+
+    foreach ($category in $config.categories) {
+        # Validate category has name
+        if ([string]::IsNullOrWhiteSpace($category.name)) { throw "Category missing 'name' field" }
+        if (-not $category.groups) { throw "Category '$($category.name)' missing 'groups' array" }
+
+        # Add divider for category
+        $script:ListItems += @{
+            Type = "divider"
+            Label = $category.name
+        }
+
+        # Validate each group has name and jobs
+        foreach ($group in $category.groups) {
+            if ([string]::IsNullOrWhiteSpace($group.name)) { throw "Group missing 'name' in category '$($category.name)'" }
+            if (-not $group.jobs) { throw "Group '$($group.name)' missing 'jobs' array" }
+            if ($group.jobs.Count -eq 0) { throw "Group '$($group.name)' has no jobs defined" }
+
+            # Validate each job in the group
+            foreach ($job in $group.jobs) {
+                if ([string]::IsNullOrWhiteSpace($job.name)) { throw "Job missing 'name' field in group '$($group.name)'" }
+                if ([string]::IsNullOrWhiteSpace($job.command)) { throw "Job '$($job.name)' missing 'command' field" }
+            }
+
+            $script:ListItems += @{
+                Type = "group"
+                Label = $group.name
+                Group = $group
+            }
+        }
+    }
+}
+
+<#
+.SYNOPSIS
+    Loads and validates a flat configuration with groups and jobs (no categories).
+
+.DESCRIPTION
+    Processes the JSON configuration when it contains a "groups" array (and no "categories").
+    Validates each group has a name, a non-empty jobs array, and each job has a name and command.
+
+    Stores the validated groups in $script:GroupsData for use by Populate-FlatList.
+
+.PARAMETER Config
+    The PSCustomObject from ConvertFrom-Json containing the full configuration.
+
+.EXAMPLE
+    Load-FlatConfig -Config $config
+
+.NOTES
+    Sets $script:GroupsData. Caller is responsible for setting $script:HasCategories = $false.
+    Does NOT set $script:Settings – that is handled separately in Load-Configuration.
+#>
+function Load-FlatConfig {
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSObject]$Config
+    )
+
+    if (-not $config.groups) { throw "Missing 'groups' array" }
+    if ($config.groups.Count -eq 0) { throw "No groups defined in configuration" }
+
+    # Validate each group has name and jobs
+    foreach ($group in $config.groups) {
+        if ([string]::IsNullOrWhiteSpace($group.name)) { throw "Group missing 'name' field" }
+        if (-not $group.jobs) { throw "Group '$($group.name)' missing 'jobs' array" }
+        if ($group.jobs.Count -eq 0) { throw "Group '$($group.name)' has no jobs defined" }
+
+        # Validate each job in the group
+        foreach ($job in $group.jobs) {
+            if ([string]::IsNullOrWhiteSpace($job.name)) { throw "Job missing 'name' field in group '$($group.name)'" }
+            if ([string]::IsNullOrWhiteSpace($job.command)) { throw "Job '$($job.name)' missing 'command' field" }
+        }
+    }
+
+    # Store globally
+    $script:GroupsData = $config.groups
+}
+
+<#
+.SYNOPSIS
+    Loads and validates the launcher configuration from a JSON file.
+
+.DESCRIPTION
+    Reads launcher_config.json from the script directory, parses it, and validates
+    the required structure. Determines whether the configuration uses a hierarchical
+    structure (categories containing groups) or a flat structure (groups only).
+
+    Dispatches to either Load-HierarchicalConfig or Load-FlatConfig for
+    detailed validation and data loading. Stores the settings section globally.
+
+.PARAMETER ConfigPath
+    Full path to the launcher_config.json file.
+
+.EXAMPLE
+    $success = Load-Configuration -ConfigPath "C:\JobLauncher\launcher_config.json"
+
+.NOTES
+    Returns $true on success, $false on failure (with error message displayed).
+
+    On success, sets:
+    - $script:Settings from config.settings
+    - $script:HasCategories = $true (if categories used) or $false (if groups used)
+    - $script:ListItems (hierarchical mode) or $script:GroupsData (flat mode)
+
+    On failure, shows a MessageBox error and returns $false.
+    Does NOT exit the script – caller should handle the failure.
+#>
 function Load-Configuration {
     param([string]$ConfigPath)
 
@@ -704,40 +848,21 @@ function Load-Configuration {
 
         # Validate required structure (nested format)
         if (-not $config.settings) { throw "Missing 'settings' section" }
-        if (-not $config.categories) { throw "Missing 'categories' array" }
-        if ($config.categories.Count -eq 0) { throw "No categories defined" }
 
-        $script:ListItems = @()
-
-        foreach ($category in $config.categories) {
-            # Validate category has name
-            if ([string]::IsNullOrWhiteSpace($category.name)) { throw "Category missing 'name' field" }
-            if (-not $category.groups) { throw "Category '$($category.name)' missing 'groups' array" }
-
-            # Add divider for category
-            $script:ListItems += @{
-                Type = "divider"
-                Label = $category.name
-            }
-
-            # Validate each group has name and jobs
-            foreach ($group in $category.groups) {
-                if ([string]::IsNullOrWhiteSpace($group.name)) { throw "Group missing 'name' in category '$($category.name)'" }
-                if (-not $group.jobs) { throw "Group '$($group.name)' missing 'jobs' array" }
-                if ($group.jobs.Count -eq 0) { throw "Group '$($group.name)' has no jobs defined" }
-
-                # Validate each job in the group
-                foreach ($job in $group.jobs) {
-                    if ([string]::IsNullOrWhiteSpace($job.name)) { throw "Job missing 'name' field in group '$($group.name)'" }
-                    if ([string]::IsNullOrWhiteSpace($job.command)) { throw "Job '$($job.name)' missing 'command' field" }
-                }
-
-                $script:ListItems += @{
-                    Type = "group"
-                    Label = $group.name
-                    Group = $group
-                }
-            }
+        if ($config.PSObject.Properties['categories']) {
+            # JSON has high level "categories" field -- hierarchical structure
+            Load-HierarchicalConfig -Config $config
+            $script:HasCategories = $true
+            # set flat GroupsData to null
+            $script:GroupsData = $null
+        } elseif ($config.PSObject.Properties['groups']) {
+            # JSON has high level "groups" field -- flat structure
+            Load-FlatConfig -Config $config
+            $script:HasCategories = $false
+            # set hierarchical data to null
+            $script:ListItems = $null
+        } else {
+            throw "JSON must have either 'categories' or 'groups' array"
         }
 
         # Store globally
@@ -1583,6 +1708,70 @@ function Measure-ListBoxMaxWidth {
 
 <#
 .SYNOPSIS
+    Populates the left panel with a flat ListBox of groups (no categories).
+
+.DESCRIPTION
+    Used when the JSON configuration contains a "groups" array (flat structure)
+    or when no categories are present. Creates a standard ListBox (not owner-draw)
+    with one item per group. Does NOT support category dividers or collapsible sections.
+
+    This is the original pre-category behavior, preserved for backward compatibility
+    and for users who prefer a simple, flat group list.
+
+    Sets $script:FormControls.ListBox and binds selection to SetGroup.
+    Auto-sizes the left panel width based on the widest group name.
+
+.NOTES
+    Called by Populate-GUI when $script:HasCategories = $false.
+    Requires $script:GroupsData to be populated (by Load-FlatConfig).
+    Requires $script:FormControls.LeftPanel to exist (created in Build-GUI).
+#>
+function Populate-FlatList {
+
+    $listBox = New-Object System.Windows.Forms.ListBox
+    $listBox.Dock = "Fill"
+    $listBox.Font = New-Object System.Drawing.Font($UI_Font_Family, $UI_Font_Size_Normal)
+    $listBox.IntegralHeight = $false
+    $null = $script:FormControls.LeftPanel.Controls.Add($listBox)
+    $script:FormControls.ListBox = $listBox
+
+    # Get group names directly from GroupsData array
+    $groups = $script:GroupsData | ForEach-Object { $_.name }
+
+    # Populate ListBox
+    $script:FormControls.ListBox.Items.Clear()
+    foreach ($group in $groups) {
+        $null = $script:FormControls.ListBox.Items.Add($group)
+    }
+
+    if ($script:FormControls.ListBox.Items.Count -gt 0) {
+        $script:FormControls.ListBox.SelectedIndex = 0
+    }
+
+    # Bind selection change event
+    $script:FormControls.ListBox.Add_SelectedIndexChanged({
+        if ($script:FormControls.ListBox.SelectedItem -and $script:GroupsData) {
+            $selectedIndex = $script:FormControls.ListBox.SelectedIndex
+            $selectedGroup = $script:GroupsData[$selectedIndex]
+            SetGroup -Group $selectedGroup
+        }
+    })
+
+    # Trigger initial population
+    if ($script:FormControls.ListBox.Items.Count -gt 0) {
+        $selectedGroup = $script:GroupsData[0]
+        SetGroup -Group $selectedGroup
+    }
+
+    # Update width of left panel appropriately
+    $maxWidth = Measure-ListBoxMaxWidth -ListBox $listBox
+    if ($script:FormControls.SplitContainer) {
+        $script:FormControls.SplitContainer.SplitterDistance = $maxWidth + 20  # Add padding
+    }
+}
+
+<#
+.SYNOPSIS
     Populates the TreeView with categories and groups from the loaded configuration.
 
 .DESCRIPTION
@@ -1734,16 +1923,22 @@ function Populate-ListBox {
     the container panel created in Build-GUI.
 #>
 function Populate-GUI {
-    # Determine which view to use (default to "flat")
-    $view = "flat"
-    if ($script:Settings.PSObject.Properties['view'] -and $script:Settings.view) {
-        $view = $script:Settings.view
-    }
+    # if JSON has "categories" key, create tree or list hierarchy based on "view" setting
+    if ($script:HasCategories) {
+        # Determine which view to use (default to "flat")
+        $view = "flat"
+        if ($script:Settings.PSObject.Properties['view'] -and $script:Settings.view) {
+            $view = $script:Settings.view
+        }
 
-    if ($view -eq "tree") {
-        Populate-TreeView
+        if ($view -eq "tree") {
+            Populate-TreeView
+        } else {
+            Populate-ListBox
+        }
     } else {
-        Populate-ListBox
+        # only groups
+        Populate-FlatList
     }
 }
 
