@@ -1893,7 +1893,7 @@ function Populate-TreeView {
     Requires $script:FormControls.LeftPanel to exist (created in Build-GUI).
     Creates $script:FormControls.ListBox and stores it for later access.
 #>
-function Populate-ListBox {
+function Populate-ListWithDividers {
 
     # Remove existing TreeView if present
     if ($script:FormControls.ContainsKey('TreeView') -and $script:FormControls.TreeView) {
@@ -2071,7 +2071,7 @@ function Populate-GUI {
             Populate-TreeView
             $buttonState = $true
         } else {
-            Populate-ListBox
+            Populate-ListWithDividers
             $buttonState = $false
         }
         # Update initial button state if null
