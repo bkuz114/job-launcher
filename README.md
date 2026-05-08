@@ -19,6 +19,7 @@ Job Launcher solves this: declare your commands once in JSON, then launch any of
 - **Timeout & kill** – Jobs that hang get terminated (process tree killed)
 - **Automatic logging** – Every run saves stdout/stderr to a timestamped log file
 - **Visual feedback** – Button flashes green on success, red on failure; status bar updates
+- **Themes** - Color themes that can be selected via a dropdown or configured via JSON
 - **No admin required** – Runs with user permissions only
 
 ## Quick start
@@ -96,6 +97,94 @@ Each log contains:
 - Termination reason (Completed / Timeout / KilledByUser / DirectoryNotFound)
 
 Logs older than 30 days are automatically deleted. Retention period is configurable at the top of `JobLauncher.ps1`.
+
+## Themes
+
+The launcher supports custom color themes. Themes control the appearance of the main window, panels, buttons, output area, and status text. Themes can be switched via a dropdown menu in the toolbar, or can be set via `launcher_config.json`.
+
+### Theme file
+
+Place `themes.json` file in the same directory as `JobLauncher.ps1` to control the available themes. If no file is present, a built-in default theme is used.
+
+A `themes.json` is already included in this repo, but you can modify as desired (remove, add, edit existing, or remove the file entirely). The dropdown will be automatically updated on the next run of the launcher.
+
+### Themes.json format
+
+```json
+{
+  "dark": {
+    "form_background": "#1E1E1E",
+    "list_background": "#252525",
+    "list_text": "#E0E0E0",
+    "panel_background": "#2D2D2D",
+    "button": "#3C3C3C",
+    "button_hover": "#505050",
+    "button_text": "#E0E0E0",
+    "button_running": "#FFC107",
+    "output_background": "#1A1A1A",
+    "output_text": "#C0C0C0",
+    "status_text": "#E0E0E0",
+    "status_ok": "#28A745",
+    "status_error": "#DC3545",
+    "status_running": "#FFC107"
+  }
+}
+```
+
+### Available theme properties
+
+| Property | Affects |
+|----------|---------|
+| `form_background` | Main window background |
+| `list_background` | Group list background |
+| `list_text` | Group list text color |
+| `panel_background` | Right panel background |
+| `button` | Job button background (normal) |
+| `button_hover` | Job button background (mouse over) |
+| `button_text` | Job button text color |
+| `button_running` | Currently running job button color |
+| `output_background` | Output textbox background |
+| `output_text` | Output text color |
+| `status_text` | Status bar text color |
+| `status_ok` | Success status color |
+| `status_error` | Error status color |
+| `status_running` | Running status color |
+
+### Selecting a theme
+
+In `launcher_config.json`, set the theme name under `settings` for it to be your default:
+
+```json
+{
+  "settings": {
+    "theme": "dark"
+  }
+}
+```
+
+Themes can also be specified per group:
+
+```json
+{
+  "groups": [
+    {
+      "name": "Development",
+      "theme": "ocean",
+      "jobs": [...]
+    }
+  ]
+}
+```
+
+If a group has a theme defined, then switching to that group will change the theme (unless you have selected a theme via the dropdown: this always takes priority)
+
+### Custom themes
+
+Add your own theme by creating a new object in `themes.json`. The name you choose (e.g., `"mytheme"`) becomes available in `launcher_config.json`. All color values are hexadecimal RGB (`#RRGGBB`).
+
+### Currently avaialble themes
+
+The following themes are currently available in `themes.json`: `amber_glow`, `blue_gold`, `blue_pink`, `coffee_break`, `cyberpunk`, `dark`, `default`, `forest`, `lavender`, `midnight_ocean`, `ocean`, `sunflower`, `sunset`.
 
 ## Requirements
 
