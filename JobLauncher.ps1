@@ -1813,12 +1813,20 @@ function Populate-TreeView {
         if ($item.Type -eq "category") {
             # Create category node (parent)
             $categoryNode = New-Object System.Windows.Forms.TreeNode($item.Label)
-            $categoryNode.Tag = $null  # No group object – categories are not selectable
+            # store entire Category object in Tag for use later
+            $categoryNode.Tag = @{
+                Type = "category"
+                Category = $item.Category
+            }
             $null = $treeView.Nodes.Add($categoryNode)
         } elseif ($item.Type -eq "group") {
             # This item is a group – add to the last category node
             $groupNode = New-Object System.Windows.Forms.TreeNode($item.Label)
-            $groupNode.Tag = $item.Group  # Store group object for SetGroup
+            # store entire Group object in Tag for use later
+            $groupNode.Tag = @{
+                Type = "group"
+                Group = $item.Group
+            }
             if ($treeView.Nodes.Count -gt 0) {
                 $lastCategory = $treeView.Nodes[$treeView.Nodes.Count - 1]
                 $null = $lastCategory.Nodes.Add($groupNode)
@@ -1843,9 +1851,16 @@ function Populate-TreeView {
     $treeView.Add_AfterSelect({
         param($sender, $e)
         $node = $e.Node
-        # Only call SetGroup if this node has a Tag (i.e., it's a group, not a category)
         if ($node.Tag -ne $null) {
-            SetGroup -Group $node.Tag
+            switch ($node.Tag.Type) {
+                "category" {
+                    # for now just return in category case
+                    return;
+                }
+                "group" {
+                    SetGroup -Group $node.Tag.Group
+                }
+            }
         }
     })
 
@@ -1853,7 +1868,7 @@ function Populate-TreeView {
     if ($treeView.Nodes.Count -gt 0 -and $treeView.Nodes[0].Nodes.Count -gt 0) {
         $firstGroupNode = $treeView.Nodes[0].Nodes[0]
         $treeView.SelectedNode = $firstGroupNode
-        SetGroup -Group $firstGroupNode.Tag
+        SetGroup -Group $firstGroupNode.Tag.Group
     }
 }
 
