@@ -696,7 +696,7 @@ function Load-Themes {
     Each category contains a "groups" array, and each group contains a "jobs" array.
 
     Builds $script:ListItems with two item types:
-    - Type "divider" for category headers (non-selectable, visual separation)
+    - Type "category" for category headers (non-selectable, visual separation)
     - Type "group" for selectable groups (stores original group object in .Group)
 
     Throws terminating errors for any missing required fields or empty collections.
@@ -729,7 +729,7 @@ function Load-HierarchicalConfig {
 
         # Add divider for category
         $script:ListItems += @{
-            Type = "divider"
+            Type = "category"
             Label = $category.name
         }
 
@@ -992,7 +992,7 @@ function Initialize-ListBox {
         $bounds = $e.Bounds
         $e.DrawBackground()
 
-        if ($item.Type -eq "divider") {
+        if ($item.Type -eq "category") {
             # Divider styling
             $font = New-Object System.Drawing.Font($sender.Font, [System.Drawing.FontStyle]::Bold)
             $brush = [System.Drawing.Brushes]::Gray
@@ -1809,7 +1809,7 @@ function Populate-TreeView {
 
     # Build TreeView nodes from $script:ListItems
     foreach ($item in $script:ListItems) {
-        if ($item.Type -eq "divider") {
+        if ($item.Type -eq "category") {
             # Create category node (parent)
             $categoryNode = New-Object System.Windows.Forms.TreeNode($item.Label)
             $categoryNode.Tag = $null  # No group object – categories are not selectable
@@ -1912,7 +1912,7 @@ function Populate-ListBox {
         $selectedIndex = $sender.SelectedIndex
         if ($selectedIndex -ge 0) {
             $selectedItem = $sender.Items[$selectedIndex]
-            if ($selectedItem.Type -eq "divider") {
+            if ($selectedItem.Type -eq "category") {
                 $sender.SelectedIndex = -1
             } elseif ($selectedItem.Type -eq "group") {
                 SetGroup -Group $selectedItem.Group
