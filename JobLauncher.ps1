@@ -816,12 +816,35 @@ function Update-KillButton {
 
 <#
 .SYNOPSIS
+    Creates and configures a TreeView control for category/group navigation.
+
+.DESCRIPTION
+    Returns a TreeView with HideSelection = false (so selected group remains visible).
+    No event handlers attached here – those go in Populate-GUI.
+#>
+function Initialize-CategoryTreeView {
+    $treeView = New-Object System.Windows.Forms.TreeView
+    $treeView.Dock = "Fill"
+    $treeView.Font = New-Object System.Drawing.Font($UI_Font_Family, $UI_Font_Size_Normal)
+    $treeView.HideSelection = $false
+    $treeView.BorderStyle = "None"
+    return $treeView
+}
+
+<#
+.SYNOPSIS
     Creates and configures the ListBox with owner-draw support for dividers.
 .DESCRIPTION
     Sets DrawMode to OwnerDrawFixed and attaches the DrawItem event handler.
     Returns the configured ListBox control.
 .PARAMETER Parent
     The container control where the ListBox will be placed (caller adds it).
+
+.NOTES
+    The DrawItem event handles:
+    - Dividers: bold font, centered text, gray color, RectangleF with StringFormat
+    - Groups: normal font, left-aligned, colors from current theme, PointF positioning
+    - Selection: highlights text color based on selected/unselected state
 #>
 function Initialize-ListBox {
     $listBox = New-Object System.Windows.Forms.ListBox
@@ -1264,7 +1287,19 @@ function Apply-Theme {
     }
 
     # Left button panel (group list)
-    if ($script:FormControls.ListBox) {
+
+    # Option 1: TreeView was set up
+    if ($script:FormControls.ContainsKey('TreeView') -and $script:FormControls.TreeView) {
+        # TreeView exists and is not null
+        $color = Get-ThemeColor -PropertyName "list_background"
+        $script:FormControls.TreeView.BackColor = $color
+
+        $textColor = Get-ThemeColor -PropertyName "list_text"
+        $script:FormControls.TreeView.ForeColor = $textColor
+    }
+
+    # Option 2: ListBox was set up
+    if ($script:FormControls.ContainsKey('ListBox') -and $script:FormControls.ListBox) {
         $color = Get-ThemeColor -PropertyName "list_background"
         $script:FormControls.ListBox.BackColor = $color
 
@@ -1479,6 +1514,40 @@ function SetGroup {
 
 <#
 .SYNOPSIS
+    Calculates the maximum pixel width required to display all TreeView node labels.
+
+.DESCRIPTION
+    Recursively measures category and group node text using the TreeView's font.
+    Returns the width of the widest node plus 10px padding.
+#>
+function Measure-TreeViewMaxWidth {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Windows.Forms.TreeView]$TreeView
+    )
+
+    $maxWidth = 0
+    $font = $TreeView.Font
+
+    foreach ($categoryNode in $TreeView.Nodes) {
+        $categorySize = [System.Windows.Forms.TextRenderer]::MeasureText($categoryNode.Text, $font)
+        $categoryWidth = $categorySize.Width
+        if ($categoryWidth -gt $maxWidth) { $maxWidth = $categoryWidth }
+
+        foreach ($groupNode in $categoryNode.Nodes) {
+            $groupSize = [System.Windows.Forms.TextRenderer]::MeasureText($groupNode.Text, $font)
+            # get group text width, but account for offset to right of parent category
+            $groupWidth = $groupSize.Width + 10
+            if ($groupWidth  -gt $maxWidth) { $maxWidth = $groupWidth }
+        }
+    }
+
+    # account for tree structure to left of text starting
+    return $maxWidth + 15
+}
+
+<#
+.SYNOPSIS
     Calculates the maximum pixel width required to display all items in a ListBox.
 
 .DESCRIPTION
@@ -1512,7 +1581,99 @@ function Measure-ListBoxMaxWidth {
     return $maxWidth
 }
 
-function Populate-GUI {
+<#
+.SYNOPSIS
+    Populates the TreeView with categories and groups from the loaded configuration.
+
+.DESCRIPTION
+    Reads $script:ListItems (built by Load-Configuration) and builds a TreeView
+    where each category is a parent node and each group is a child node.
+    Category nodes have Tag = $null (not selectable). Group nodes have Tag = $group
+    object (used by SetGroup). Expands all categories by default, auto-sizes the
+    left panel width, and selects the first group node.
+
+.NOTES
+    This function is called by Populate-GUI when "view": "tree" is set in JSON.
+    Requires $script:FormControls.TreeView to exist (created by Initialize-CategoryTreeView).
+    Requires $script:FormControls.SplitContainer for auto-width adjustment.
+#>
+function Populate-TreeView {
+    # Create TreeView (to hold groups) using dedicated function
+    $treeView = Initialize-CategoryTreeView
+    $null = $script:FormControls.LeftPanel.Controls.Add($treeView)
+    $script:FormControls.TreeView = $treeView
+
+    # Build TreeView nodes from $script:ListItems
+    foreach ($item in $script:ListItems) {
+        if ($item.Type -eq "divider") {
+            # Create category node (parent)
+            $categoryNode = New-Object System.Windows.Forms.TreeNode($item.Label)
+            $categoryNode.Tag = $null  # No group object – categories are not selectable
+            $null = $treeView.Nodes.Add($categoryNode)
+        } elseif ($item.Type -eq "group") {
+            # This item is a group – add to the last category node
+            $groupNode = New-Object System.Windows.Forms.TreeNode($item.Label)
+            $groupNode.Tag = $item.Group  # Store group object for SetGroup
+            if ($treeView.Nodes.Count -gt 0) {
+                $lastCategory = $treeView.Nodes[$treeView.Nodes.Count - 1]
+                $null = $lastCategory.Nodes.Add($groupNode)
+            } else {
+                # Fallback: no category? Should not happen with valid JSON
+                Write-OutputWithTimestamp "Warning: Group '$($item.Label)' has no parent category" -IsError $true
+                $null = $treeView.Nodes.Add($groupNode)
+            }
+        }
+    }
+
+    # Expand all categories by default
+    $treeView.ExpandAll()
+
+    # Auto-size left panel width
+    $maxWidth = Measure-TreeViewMaxWidth -TreeView $treeView
+    if ($script:FormControls.SplitContainer) {
+        $script:FormControls.SplitContainer.SplitterDistance = $maxWidth + 20
+    }
+
+    # Selection event
+    $treeView.Add_AfterSelect({
+        param($sender, $e)
+        $node = $e.Node
+        # Only call SetGroup if this node has a Tag (i.e., it's a group, not a category)
+        if ($node.Tag -ne $null) {
+            SetGroup -Group $node.Tag
+        }
+    })
+
+    # Select the first group node (first child of first category)
+    if ($treeView.Nodes.Count -gt 0 -and $treeView.Nodes[0].Nodes.Count -gt 0) {
+        $firstGroupNode = $treeView.Nodes[0].Nodes[0]
+        $treeView.SelectedNode = $firstGroupNode
+        SetGroup -Group $firstGroupNode.Tag
+    }
+}
+
+<#
+.SYNOPSIS
+    Populates the ListBox with category dividers and groups from the loaded configuration.
+
+.DESCRIPTION
+    Reads $script:ListItems (built by Load-Configuration) and builds an owner-draw
+    ListBox where category dividers appear as bold, centered, non-selectable items
+    and groups appear as standard selectable items. Uses custom drawing for
+    dividers and dynamic theme colors for groups.
+
+    This function configures the ListBox's DrawMode, attaches the DrawItem event,
+    sets ItemHeight based on font size plus padding, and applies auto-width sizing
+    to the left panel.
+
+.NOTES
+    This function is called by Populate-GUI when "view": "flat" is set in JSON
+    (or when no view setting is present, as flat is the default).
+
+    Requires $script:FormControls.LeftPanel to exist (created in Build-GUI).
+    Creates $script:FormControls.ListBox and stores it for later access.
+#>
+function Populate-ListBox {
     # Create ListBox using dedicated function
     $listBox = Initialize-ListBox
     $null = $script:FormControls.LeftPanel.Controls.Add($listBox)
@@ -1551,6 +1712,38 @@ function Populate-GUI {
     $maxWidth = Measure-ListBoxMaxWidth -ListBox $listBox
     if ($script:FormControls.SplitContainer) {
         $script:FormControls.SplitContainer.SplitterDistance = $maxWidth
+    }
+}
+
+<#
+.SYNOPSIS
+    Entry point for populating the left panel based on the configured view.
+
+.DESCRIPTION
+    Reads the "view" setting from JSON (defaults to "flat") and dispatches to
+    either Populate-ListView (flat groups) or Populate-TreeView (collapsible
+    categories). Both views share the same underlying data structure
+    ($script:ListItems) built by Load-Configuration.
+
+.NOTES
+    "view": "flat"   – Uses ListBox with category dividers (original behavior)
+    "view": "tree"   – Uses TreeView with collapsible categories
+    No other values are supported; invalid values default to "flat".
+
+    This function assumes $script:FormControls.LeftPanel already exists as
+    the container panel created in Build-GUI.
+#>
+function Populate-GUI {
+    # Determine which view to use (default to "flat")
+    $view = "flat"
+    if ($script:Settings.PSObject.Properties['view'] -and $script:Settings.view) {
+        $view = $script:Settings.view
+    }
+
+    if ($view -eq "tree") {
+        Populate-TreeView
+    } else {
+        Populate-ListBox
     }
 }
 
