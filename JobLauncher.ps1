@@ -731,6 +731,7 @@ function Load-HierarchicalConfig {
         $script:ListItems += @{
             Type = "category"
             Label = $category.name
+            Category = $category
         }
 
         # Validate each group has name and jobs
