@@ -17,6 +17,7 @@ Job Launcher solves this: declare your commands once in JSON, then launch any of
 - **Dynamic UI** – Buttons auto-generate from your config; switch between job categories
 - **One-click execution** – Click a button, watch output appear
 - **Timeout & kill** – Jobs that hang get terminated (process tree killed)
+- **Kill Button** - Kill button allows you to stop running jobs without waiting for a timeout. Terminates the job's process tree (main process and all child processes) using `taskkill /T`.
 - **Automatic logging** – Every run saves stdout/stderr to a timestamped log file
 - **Visual feedback** – Button flashes green on success, red on failure; status bar updates
 - **Themes** - Color themes that can be selected via a dropdown or configured via JSON
