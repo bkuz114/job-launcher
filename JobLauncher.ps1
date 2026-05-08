@@ -1383,7 +1383,7 @@ function Get-ThemeColor {
     Apply-Theme -themeName "default"
 
 .NOTES
-    This function is called by SetGroup after UpdateButtonsForGroup has created
+    This function is called by Set-Group after UpdateButtonsForGroup has created
     the job buttons. It assumes $script:JobButtons is populated with all
     current buttons.
 
@@ -1622,7 +1622,7 @@ function Set-Theme {
     and optionally .theme.
 
 .EXAMPLE
-    SetGroup -Group $selectedGroup
+    Set-Group -Group $selectedGroup
 
 .NOTES
     Called from:
@@ -1632,7 +1632,7 @@ function Set-Theme {
     Does not modify the ListBox selection itself - that is handled by the caller
     or user interaction. This function only responds to the selected group.
 #>
-function SetGroup {
+function Set-Group {
     param($Group)
 
     # Create buttons for this group
@@ -1726,7 +1726,7 @@ function Measure-ListBoxMaxWidth {
     This is the original pre-category behavior, preserved for backward compatibility
     and for users who prefer a simple, flat group list.
 
-    Sets $script:FormControls.ListBox and binds selection to SetGroup.
+    Sets $script:FormControls.ListBox and binds selection to Set-Group.
     Auto-sizes the left panel width based on the widest group name.
 
 .NOTES
@@ -1761,14 +1761,14 @@ function Populate-FlatList {
         if ($script:FormControls.ListBox.SelectedItem -and $script:GroupsData) {
             $selectedIndex = $script:FormControls.ListBox.SelectedIndex
             $selectedGroup = $script:GroupsData[$selectedIndex]
-            SetGroup -Group $selectedGroup
+            Set-Group -Group $selectedGroup
         }
     })
 
     # Trigger initial population
     if ($script:FormControls.ListBox.Items.Count -gt 0) {
         $selectedGroup = $script:GroupsData[0]
-        SetGroup -Group $selectedGroup
+        Set-Group -Group $selectedGroup
     }
 
     # Update width of left panel appropriately
@@ -1786,7 +1786,7 @@ function Populate-FlatList {
     Reads $script:ListItems (built by Load-Configuration) and builds a TreeView
     where each category is a parent node and each group is a child node.
     Category nodes have Tag = $null (not selectable). Group nodes have Tag = $group
-    object (used by SetGroup). Expands all categories by default, auto-sizes the
+    object (used by Set-Group). Expands all categories by default, auto-sizes the
     left panel width, and selects the first group node.
 
 .NOTES
@@ -1858,7 +1858,7 @@ function Populate-TreeView {
                     return;
                 }
                 "group" {
-                    SetGroup -Group $node.Tag.Group
+                    Set-Group -Group $node.Tag.Group
                 }
             }
         }
@@ -1868,7 +1868,7 @@ function Populate-TreeView {
     if ($treeView.Nodes.Count -gt 0 -and $treeView.Nodes[0].Nodes.Count -gt 0) {
         $firstGroupNode = $treeView.Nodes[0].Nodes[0]
         $treeView.SelectedNode = $firstGroupNode
-        SetGroup -Group $firstGroupNode.Tag.Group
+        Set-Group -Group $firstGroupNode.Tag.Group
     }
 }
 
@@ -1916,7 +1916,7 @@ function Populate-ListBox {
     for ($i = 0; $i -lt $listBox.Items.Count; $i++) {
         if ($listBox.Items[$i].Type -eq "group") {
             $listBox.SelectedIndex = $i
-            SetGroup -Group $listBox.Items[$i].Group
+            Set-Group -Group $listBox.Items[$i].Group
             break
         }
     }
@@ -1931,7 +1931,7 @@ function Populate-ListBox {
             if ($selectedItem.Type -eq "category") {
                 $sender.SelectedIndex = -1
             } elseif ($selectedItem.Type -eq "group") {
-                SetGroup -Group $selectedItem.Group
+                Set-Group -Group $selectedItem.Group
             }
         }
     })
