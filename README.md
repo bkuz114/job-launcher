@@ -183,9 +183,24 @@ If a group has a theme defined, then switching to that group will change the the
 
 Add your own theme by creating a new object in `themes.json`. The name you choose (e.g., `"mytheme"`) becomes available in `launcher_config.json`. All color values are hexadecimal RGB (`#RRGGBB`).
 
-### Currently avaialble themes
+### Available Themes
 
-The following themes are currently available in `themes.json`: `amber_glow`, `blue_gold`, `blue_pink`, `coffee_break`, `cyberpunk`, `dark`, `default`, `forest`, `lavender`, `midnight_ocean`, `ocean`, `sunflower`, `sunset`.
+The following themes are currently available in `themes.json`:
+
+| Theme | Description |
+|-------|-------------|
+| `dark` | Classic dark theme with neutral gray tones and amber accents for running jobs |
+| `ocean` | Deep navy blues with cyan undertones, evoking calm coastal waters |
+| `blue_gold` | Dark blue interface with a striking gold toolbar and gold text accents |
+| `blue_pink` | Midnight purple-blues with soft pink button text and magenta running indicators |
+| `forest` | Earthy green-on-green scheme with subtle contrast, easy on the eyes |
+| `sunset` | Warm dusky purples with peach and amber highlights |
+| `coffee_break` | Rich brown undertones with creamy beige text — warm and comfortable |
+| `amber_glow` | Dark espresso background with glowing amber and gold accents |
+| `midnight_ember` | Deep indigo-black canvas with warm ember-orange highlights |
+| `sunflower` | Dark theme with vibrant yellow-gold text and accents — bold and cheerful |
+| `lavender` | Soft purple-on-indigo palette, elegant and low-strain |
+| `cyberpunk` | Neon magenta on dark buttons with cyan text — retro-futuristic and high contrast |
 
 ## Requirements
 
