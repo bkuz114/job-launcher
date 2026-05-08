@@ -2068,11 +2068,9 @@ function Populate-GUI {
 
         $buttonState = $true
         if ($view -eq "tree") {
-            Write-Host "will populate tree"
             Populate-TreeView
             $buttonState = $true
         } else {
-            Write-Host "will populate flat"
             Populate-ListBox
             $buttonState = $false
         }
