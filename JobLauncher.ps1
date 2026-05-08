@@ -515,8 +515,8 @@ function Update-ButtonStates {
     }
 
     if ($script:KillButton) {
-        $script:KillButton.Enabled = ($Running)  # Kill button enabled only when job running
-        Write-Host "DEBUG: Kill button status switched: Current enabled state: $($script:KillButton.Enabled)"
+        # KillButtn should be opposite of job buttons: enable when jobs running, gray out otherwise
+        Update-KillButton -KillButton $script:KillButton -Enable $Running
     }
 }
 
@@ -741,6 +741,65 @@ function Load-Configuration {
 
 <#
 .SYNOPSIS
+    Updates the visual appearance of the kill button based on its logical enabled state.
+
+.DESCRIPTION
+    The kill button is kept always enabled in order to style it (disabled buttons
+    can't be styled, and become unreadable against certain color themes), and its
+    visual state is changed when no jobs running to simulate a disabled state.
+
+    This function updates that visual state of the kill button:
+    - When job running: Uses theme colors for kill button + hand curosr
+    - When no job: Uses grayed-out colors + block cursor
+
+    Call this function whenever the kill button's logical state changes or when
+    the theme is changed (to update colors).
+
+.PARAMETER KillButton
+    The button control that functions as the kill button.
+    Must have a .Tag property containing a boolean value ($true = job running).
+
+.PARAMETER Enable
+    Optional. If provided, force button state to enabled regardless if job running
+
+.EXAMPLE
+    # Update appearance based on current Tag value
+    Update-KillButton -KillButton $script:KillButton
+
+.NOTES
+    Requires Get-ThemeColor function to exist (for theme color retrieval).
+    Grayed out colors are hardcoded to System.Drawing.Color.LightGray and DarkGray.
+#>
+function Update-KillButton {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Windows.Forms.Button]$KillButton,
+
+        [Parameter(Mandatory = $false)]
+        [bool]$Enable
+    )
+
+    # initialize to if there's a job marked as running
+    $enableButton = [bool]$script:CurrentRunningJob
+
+    # if user specified a certain state, that overrides
+    if ($PSBoundParameters.ContainsKey('Enable')) {
+        $enableButton = $Enable
+    }
+
+    if ($enableButton) {
+        $KillButton.BackColor = Get-ThemeColor -PropertyName "kill_button"
+        $KillButton.ForeColor = Get-ThemeColor -PropertyName "kill_button_text"
+        $KillButton.Cursor = [System.Windows.Forms.Cursors]::Hand
+    } else {
+        $KillButton.BackColor = [System.Drawing.Color]::LightGray
+        $KillButton.ForeColor = [System.Drawing.Color]::DarkGray
+        $KillButton.Cursor = [System.Windows.Forms.Cursors]::No
+    }
+}
+
+<#
+.SYNOPSIS
     Creates and configures the toolbar with theme selector and kill button.
 .DESCRIPTION
     Returns a TableLayoutPanel configured with three columns:
@@ -811,10 +870,19 @@ function Initialize-Toolbar {
     $killButton.Padding = New-Object System.Windows.Forms.Padding(10, 5, 10, 5)
     $killButton.FlatStyle = "Flat"
     $killButton.Margin = New-Object System.Windows.Forms.Padding(5, 5, 5, 5)
-    $killButton.Enabled = $false
+    # keep killButton always enabled and simulate disabled state
+    # via styling + returning from click event if no job running.
+    # Reason:
+    # disabled state doesn't allow for color styling, and the button
+    # becomes unreadable.
+    $killButton.Enabled = $true
     $killButton.Add_Click({
-        Stop-CurrentJob
+        if ($script:CurrentRunningJob) {
+            Stop-CurrentJob
+        }
     })
+    # set initial styling
+    Update-KillButton -KillButton $killButton -Enable $false
 
     $null = $toolbar.Controls.Add($killButton, 2, 0)
     $script:KillButton = $killButton
@@ -1128,11 +1196,8 @@ function Apply-Theme {
 
     # Kill button
     if ($script:KillButton) {
-        $color = Get-ThemeColor -PropertyName "kill_button"
-        $script:KillButton.BackColor = $color
-
-        $textColor = Get-ThemeColor -PropertyName "kill_button_text"
-        $script:KillButton.ForeColor = $textColor
+        # use function for styling kill button based on current running jobs
+        Update-KillButton -KillButton $script:KillButton
     }
 
     # Output textbox
