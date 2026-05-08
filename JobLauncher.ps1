@@ -1394,6 +1394,10 @@ function Apply-Theme {
     # Set the theme globally first
     Set-Theme -themeName $ThemeName
 
+    # Button colors
+    $buttonColor = Get-ThemeColor -PropertyName "button"
+    $buttonTextColor = Get-ThemeColor -PropertyName "button_text"
+
     # === Apply colors to each UI element ===
 
     # Main window background
@@ -1434,6 +1438,12 @@ function Apply-Theme {
         $script:FormControls.ListBox.Invalidate()
     }
 
+    # Toggle Button
+    if ($script:FormControls.ContainsKey('ToggleButton') -and $script:FormControls.ToggleButton) {
+        $script:FormControls.ToggleButton.BackColor = $buttonColor
+        $script:FormControls.ToggleButton.ForeColor = $buttonTextColor
+    }
+
     # Right panel background (the container holding ButtonPanel)
     if ($script:FormControls.RightPanel) {
         $color = Get-ThemeColor -PropertyName "panel_background"
@@ -1468,12 +1478,9 @@ function Apply-Theme {
     }
 
     # Job buttons
-    $buttonColor = Get-ThemeColor -PropertyName "button"
-    $textColor = Get-ThemeColor -PropertyName "button_text"
-
     foreach ($btn in $script:JobButtons.Values) {
         $btn.BackColor = $buttonColor
-        $btn.ForeColor = $textColor
+        $btn.ForeColor = $buttonTextColor
     }
 }
 
@@ -1787,6 +1794,14 @@ function Populate-FlatList {
     Requires $script:FormControls.SplitContainer for auto-width adjustment.
 #>
 function Populate-TreeView {
+
+    # Remove existing ListBox if present
+    if ($script:FormControls.ContainsKey('ListBox') -and $script:FormControls.ListBox) {
+        $script:FormControls.LeftPanel.Controls.Remove($script:FormControls.ListBox)
+        $script:FormControls.ListBox.Dispose()
+        $script:FormControls.ListBox = $null
+    }
+
     # Create TreeView (to hold groups) using dedicated function
     $treeView = Initialize-CategoryTreeView
     $null = $script:FormControls.LeftPanel.Controls.Add($treeView)
@@ -1863,6 +1878,14 @@ function Populate-TreeView {
     Creates $script:FormControls.ListBox and stores it for later access.
 #>
 function Populate-ListBox {
+
+    # Remove existing TreeView if present
+    if ($script:FormControls.ContainsKey('TreeView') -and $script:FormControls.TreeView) {
+        $script:FormControls.LeftPanel.Controls.Remove($script:FormControls.TreeView)
+        $script:FormControls.TreeView.Dispose()
+        $script:FormControls.TreeView = $null
+    }
+
     # Create ListBox using dedicated function
     $listBox = Initialize-ListBox
     $null = $script:FormControls.LeftPanel.Controls.Add($listBox)
@@ -1906,6 +1929,88 @@ function Populate-ListBox {
 
 <#
 .SYNOPSIS
+    Creates the toggle button for switching between List and Tree views.
+
+.DESCRIPTION
+    Creates a Button control docked to the bottom of the left panel.
+    The button's Tag property stores the current view state:
+    - $true  = Tree view (category groups with collapsible nodes)
+    - $false = Flat view (list with category dividers)
+
+    The click event flips the state via Set-ToggleButton and triggers
+    Populate-GUI to rebuild the left panel with the opposite view.
+
+.OUTPUTS
+    System.Windows.Forms.Button - The configured toggle button with no initial state (Tag = $null).
+
+.NOTES
+    The caller is responsible for:
+    - Adding the button to $script:FormControls.LeftPanel
+    - Storing the button reference in $script:FormControls.ToggleButton
+    - Initializing the button's state via Set-ToggleButton
+#>
+function Create-ToggleButton {
+    $button = New-Object System.Windows.Forms.Button
+    $button.Dock = "Bottom"
+    $button.Height = 30
+    $button.FlatStyle = "Flat"
+    $button.Tag = $null
+
+    # Click event for Toggle Button: updates
+    # state then calls Populate-GUI again
+    $button.Add_Click({
+        $newState = -not $this.Tag
+        Set-ToggleButton -Button $this -State $newState
+        Populate-GUI
+    })
+
+    return $button
+}
+
+<#
+.SYNOPSIS
+    Updates the toggle button's visual state and Tag property.
+
+.DESCRIPTION
+    Sets the button's Text and Tag based on the provided boolean state:
+    - $true  (Tree view)   -> Text = "Switch to List View", Tag = $true
+    - $false (Flat view)   -> Text = "Switch to Tree View", Tag = $false
+
+    The Tag serves as the single source of truth for the current view state,
+    independent of JSON settings.
+
+.PARAMETER Button
+    The toggle button control to update.
+
+.PARAMETER State
+    Boolean indicating the desired view:
+    - $true  = Switch to Tree view (button shows "Switch to List View")
+    - $false = Switch to Flat view (button shows "Switch to Tree View")
+
+.NOTES
+    Does NOT trigger Populate-GUI. The caller is responsible for rebuilding
+    the view after calling this function.
+#>
+function Set-ToggleButton {
+    param(
+        [System.Windows.Forms.Button]$Button,
+        [boolean]$State
+    )
+
+    Write-Host "DEBUG: Set-ToggleButton $State"
+    # State = True ==> set to tree view
+    # State = False ==> set to flat view
+    if ($State -eq $true) {
+        # Set to flat view
+        $Button.Text = "Switch to List View"
+    } else {
+        $Button.Text = "Switch to Tree View"
+    }
+    $Button.Tag = $State
+}
+
+<#
+.SYNOPSIS
     Entry point for populating the left panel based on the configured view.
 
 .DESCRIPTION
@@ -1925,16 +2030,39 @@ function Populate-ListBox {
 function Populate-GUI {
     # if JSON has "categories" key, create tree or list hierarchy based on "view" setting
     if ($script:HasCategories) {
-        # Determine which view to use (default to "flat")
-        $view = "flat"
-        if ($script:Settings.PSObject.Properties['view'] -and $script:Settings.view) {
-            $view = $script:Settings.view
+        # Create toggle button if it doesn't exist
+        if (-not $script:FormControls.ContainsKey('ToggleButton') -or -not $script:FormControls.ToggleButton) {
+            $toggleButton = Create-ToggleButton
+            $null = $script:FormControls.LeftPanel.Controls.Add($toggleButton)
+            $script:FormControls.ToggleButton = $toggleButton
         }
 
-        if ($view -eq "tree") {
-            Populate-TreeView
+        # Determine which view to use (default to "flat")
+        $view = "flat"
+
+        # User selection view toggle button always takes priority
+        # (ensure state is set: is null initially before user click)
+        if ($script:FormControls.ToggleButton -and $script:FormControls.ToggleButton.Tag -ne $null) {
+            $view = if ($script:FormControls.ToggleButton.Tag -eq $true) { "tree" } else { "flat" }
+        } elseif ($script:Settings.PSObject.Properties['view'] -and $script:Settings.view) {
+            $view = $script:Settings.view
         } else {
+            $view = "flat"
+        }
+
+        $buttonState = $true
+        if ($view -eq "tree") {
+            Write-Host "will populate tree"
+            Populate-TreeView
+            $buttonState = $true
+        } else {
+            Write-Host "will populate flat"
             Populate-ListBox
+            $buttonState = $false
+        }
+        # Update initial button state if null
+        if ($script:FormControls.ToggleButton -and $script:FormControls.ToggleButton.Tag -eq $null) {
+            Set-ToggleButton -Button $script:FormControls.ToggleButton -State $buttonState
         }
     } else {
         # only groups
