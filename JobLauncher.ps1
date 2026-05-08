@@ -106,7 +106,6 @@ $DefaultLogsDirectory = Join-Path -Path (Split-Path -Path $script:MyInvocation.M
 
 # Script-scoped variables (not global scope, but accessible to functions defined below)
 $script:CurrentRunningJob = $null           # Hashtable with: Process, JobName, Button, StartTime
-$script:GroupsData = $null                  # Parsed JSON groups array
 $script:Settings = $null                    # Parsed JSON settings object
 $script:OutputTextBox = $null               # Reference to UI control
 $script:StatusLabel = $null                 # Reference to UI control
@@ -705,26 +704,44 @@ function Load-Configuration {
 
         # Validate required structure (nested format)
         if (-not $config.settings) { throw "Missing 'settings' section" }
-        if (-not $config.groups) { throw "Missing 'groups' array" }
-        if ($config.groups.Count -eq 0) { throw "No groups defined in configuration" }
+        if (-not $config.categories) { throw "Missing 'categories' array" }
+        if ($config.categories.Count -eq 0) { throw "No categories defined" }
 
-        # Validate each group has name and jobs
-        foreach ($group in $config.groups) {
-            if ([string]::IsNullOrWhiteSpace($group.name)) { throw "Group missing 'name' field" }
-            if (-not $group.jobs) { throw "Group '$($group.name)' missing 'jobs' array" }
-            if ($group.jobs.Count -eq 0) { throw "Group '$($group.name)' has no jobs defined" }
+        $script:ListItems = @()
 
-            # Validate each job in the group
-            foreach ($job in $group.jobs) {
-                if ([string]::IsNullOrWhiteSpace($job.name)) { throw "Job missing 'name' field in group '$($group.name)'" }
-                if ([string]::IsNullOrWhiteSpace($job.command)) { throw "Job '$($job.name)' missing 'command' field" }
+        foreach ($category in $config.categories) {
+            # Validate category has name
+            if ([string]::IsNullOrWhiteSpace($category.name)) { throw "Category missing 'name' field" }
+            if (-not $category.groups) { throw "Category '$($category.name)' missing 'groups' array" }
+
+            # Add divider for category
+            $script:ListItems += @{
+                Type = "divider"
+                Label = $category.name
+            }
+
+            # Validate each group has name and jobs
+            foreach ($group in $category.groups) {
+                if ([string]::IsNullOrWhiteSpace($group.name)) { throw "Group missing 'name' in category '$($category.name)'" }
+                if (-not $group.jobs) { throw "Group '$($group.name)' missing 'jobs' array" }
+                if ($group.jobs.Count -eq 0) { throw "Group '$($group.name)' has no jobs defined" }
+
+                # Validate each job in the group
+                foreach ($job in $group.jobs) {
+                    if ([string]::IsNullOrWhiteSpace($job.name)) { throw "Job missing 'name' field in group '$($group.name)'" }
+                    if ([string]::IsNullOrWhiteSpace($job.command)) { throw "Job '$($job.name)' missing 'command' field" }
+                }
+
+                $script:ListItems += @{
+                    Type = "group"
+                    Label = $group.name
+                    Group = $group
+                }
             }
         }
 
         # Store globally
         $script:Settings = $config.settings
-        $script:GroupsData = $config.groups
-
         return $true
     }
     catch {
@@ -795,6 +812,82 @@ function Update-KillButton {
         $KillButton.ForeColor = [System.Drawing.Color]::DarkGray
         $KillButton.Cursor = [System.Windows.Forms.Cursors]::No
     }
+}
+
+<#
+.SYNOPSIS
+    Creates and configures the ListBox with owner-draw support for dividers.
+.DESCRIPTION
+    Sets DrawMode to OwnerDrawFixed and attaches the DrawItem event handler.
+    Returns the configured ListBox control.
+.PARAMETER Parent
+    The container control where the ListBox will be placed (caller adds it).
+#>
+function Initialize-ListBox {
+    $listBox = New-Object System.Windows.Forms.ListBox
+    $listBox.Dock = "Fill"
+    $listBox.Font = New-Object System.Drawing.Font($UI_Font_Family, $UI_Font_Size_Normal)
+    $listBox.DrawMode = [System.Windows.Forms.DrawMode]::OwnerDrawFixed
+    $defaultHeight = $listBox.Font.Height
+    $padding = 1
+    $listBox.ItemHeight = $defaultHeight + $padding
+    $listBox.IntegralHeight = $false
+
+    # Attach draw event
+    $listBox.Add_DrawItem({
+        param($sender, $e)
+
+        $index = $e.Index
+        if ($index -lt 0 -or $index -ge $sender.Items.Count) { return }
+
+        $item = $sender.Items[$index]
+        $bounds = $e.Bounds
+        $e.DrawBackground()
+
+        if ($item.Type -eq "divider") {
+            # Divider styling
+            $font = New-Object System.Drawing.Font($sender.Font, [System.Drawing.FontStyle]::Bold)
+            $brush = [System.Drawing.Brushes]::Gray
+            $format = New-Object System.Drawing.StringFormat
+            $format.Alignment = [System.Drawing.StringAlignment]::Center
+            $format.LineAlignment = [System.Drawing.StringAlignment]::Center
+            $rectF = New-Object System.Drawing.RectangleF($bounds.X, $bounds.Y, $bounds.Width, $bounds.Height)
+            $e.Graphics.DrawString($item.Label, $font, $brush, $rectF, $format)
+
+            # Prevent selection highlight
+            $e.DrawFocusRectangle()
+
+            $font.Dispose()
+            $format.Dispose()
+        } else {
+
+            # Create brush based on selection state
+            $textColor = Get-ThemeColor -PropertyName "list_text"
+            $selectedTextColor = "White"
+
+            if (($e.State -band [System.Windows.Forms.DrawItemState]::Selected) -ne 0) {
+                $brush = New-Object System.Drawing.SolidBrush($selectedTextColor)
+            } else {
+                $brush = New-Object System.Drawing.SolidBrush($textColor)
+            }
+
+            # Draw the text using $brush
+            $rectF = New-Object System.Drawing.RectangleF($bounds.X, $bounds.Y, $bounds.Width, $bounds.Height)
+            $format = New-Object System.Drawing.StringFormat
+            $format.LineAlignment = [System.Drawing.StringAlignment]::Center
+            $e.Graphics.DrawString($item.Label, $sender.Font, $brush, $rectF, $format)
+            $format.Dispose()
+
+            # Dispose after use
+            $brush.Dispose()
+
+            if (($e.State -band [System.Windows.Forms.DrawItemState]::Focus) -ne 0) {
+                $e.DrawFocusRectangle()
+            }
+        }
+    })
+
+    return $listBox
 }
 
 <#
@@ -932,11 +1025,9 @@ function Build-GUI {
     $splitContainer.Orientation = "Vertical"
 
     # --- LEFT PANEL (group list) ---
-    $listBox = New-Object System.Windows.Forms.ListBox
-    $listBox.Dock = "Fill"
-    $listBox.Font = New-Object System.Drawing.Font($UI_Font_Family, $UI_Font_Size_Normal)
-    $listBox.IntegralHeight = $false
-    $null = $splitContainer.Panel1.Controls.Add($listBox)
+    $leftPanel = New-Object System.Windows.Forms.Panel
+    $leftPanel.Dock = "Fill"
+    $null = $splitContainer.Panel1.Controls.Add($leftPanel)
 
     # --- RIGHT PANEL (job buttons + output area) ---
     $rightPanel = New-Object System.Windows.Forms.TableLayoutPanel
@@ -1002,7 +1093,7 @@ function Build-GUI {
     $formControls = @{
         SplitContainer = $splitContainer
         Form           = $form
-        ListBox        = $listBox
+        LeftPanel      = $leftPanel
         ButtonPanel    = $buttonPanel
         RightPanel     = $rightPanel
         Toolbar        = $toolbar
@@ -1179,6 +1270,8 @@ function Apply-Theme {
 
         $textColor = Get-ThemeColor -PropertyName "list_text"
         $script:FormControls.ListBox.ForeColor = $textColor
+
+        $script:FormControls.ListBox.Invalidate()
     }
 
     # Right panel background (the container holding ButtonPanel)
@@ -1276,7 +1369,7 @@ function Initialize-Theme {
     verify that the theme name exists in $Script:Themes.
 
 .PARAMETER Group
-    The group object (from $script:GroupsData) containing optional .theme property.
+    The group object containing optional .theme property.
 
 .EXAMPLE
     $themeName = Get-GroupTheme -Group $selectedGroup
@@ -1357,7 +1450,7 @@ function Set-Theme {
     and allows theme to be reapplied without rebuilding buttons if needed.
 
 .PARAMETER Group
-    The target group object from $script:GroupsData. Contains .name, .jobs,
+    The target group object. Contains .name, .jobs,
     and optionally .theme.
 
 .EXAMPLE
@@ -1420,46 +1513,44 @@ function Measure-ListBoxMaxWidth {
 }
 
 function Populate-GUI {
+    # Create ListBox using dedicated function
+    $listBox = Initialize-ListBox
+    $null = $script:FormControls.LeftPanel.Controls.Add($listBox)
+    $script:FormControls.ListBox = $listBox
 
-    # Defensive check
-    #
-    if (-not $script:FormControls -or -not $script:FormControls.ContainsKey('ListBox')) {
-        Write-Error "Populate-GUI: Invalid FormControls parameter. Missing ListBox."
-        return
+    # Populate items from $script:ListItems
+    foreach ($item in $script:ListItems) {
+        $null = $listBox.Items.Add($item)
     }
 
-    # Get group names directly from GroupsData array
-    $groups = $script:GroupsData | ForEach-Object { $_.name }
-
-    # Populate ListBox
-    $script:FormControls.ListBox.Items.Clear()
-    foreach ($group in $groups) {
-        $null = $script:FormControls.ListBox.Items.Add($group)
+    # Select first non-divider item and trigger initial population
+    for ($i = 0; $i -lt $listBox.Items.Count; $i++) {
+        if ($listBox.Items[$i].Type -eq "group") {
+            $listBox.SelectedIndex = $i
+            SetGroup -Group $listBox.Items[$i].Group
+            break
+        }
     }
 
-    if ($script:FormControls.ListBox.Items.Count -gt 0) {
-        $script:FormControls.ListBox.SelectedIndex = 0
-    }
+    # Selection event
+    $listBox.Add_SelectedIndexChanged({
+        param($sender, $e)
 
-    # Bind selection change event
-    $script:FormControls.ListBox.Add_SelectedIndexChanged({
-        if ($script:FormControls.ListBox.SelectedItem -and $script:GroupsData) {
-            $selectedIndex = $script:FormControls.ListBox.SelectedIndex
-            $selectedGroup = $script:GroupsData[$selectedIndex]
-            SetGroup -Group $selectedGroup
+        $selectedIndex = $sender.SelectedIndex
+        if ($selectedIndex -ge 0) {
+            $selectedItem = $sender.Items[$selectedIndex]
+            if ($selectedItem.Type -eq "divider") {
+                $sender.SelectedIndex = -1
+            } elseif ($selectedItem.Type -eq "group") {
+                SetGroup -Group $selectedItem.Group
+            }
         }
     })
 
     # Update width of left panel appropriately
-    $maxWidth = Measure-ListBoxMaxWidth -ListBox $script:FormControls.ListBox
+    $maxWidth = Measure-ListBoxMaxWidth -ListBox $listBox
     if ($script:FormControls.SplitContainer) {
         $script:FormControls.SplitContainer.SplitterDistance = $maxWidth + 40  # Add padding
-    }
-
-    # Trigger initial population
-    if ($script:FormControls.ListBox.Items.Count -gt 0) {
-        $selectedGroup = $script:GroupsData[0]
-        SetGroup -Group $selectedGroup
     }
 }
 

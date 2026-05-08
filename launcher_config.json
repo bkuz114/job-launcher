@@ -1,148 +1,163 @@
 {
-  "version": "1.0",
+  "version": "2.0",
   "settings": {
     "logs_directory": "C:\\tmp\\JobLauncherLogs",
     "theme": "default",
     "default_timeout_seconds": 30,
     "default_working_directory": "C:\\Users\\user\\your_dir"
   },
-  "groups": [
+  "categories": [
     {
-      "name": "Basic Commands",
-      "jobs": [
+      "name": "Basic",
+      "groups": [
         {
-          "name": "Echo Hello World",
-          "command": "cmd.exe /c echo Hello from Job Launcher!",
-          "working_directory": null,
-          "timeout_seconds": 10
-        },
-        {
-          "name": "Show Current Date and Time",
-          "command": "powershell.exe -Command \"Get-Date -Format 'yyyy-MM-dd HH:mm:ss'\"",
-          "working_directory": null,
-          "timeout_seconds": null
-        },
-        {
-          "name": "List C:\\ Root Directory (First 20 items)",
-          "command": "cmd.exe /c dir C:\\ /b | powershell.exe -Command \"$input | Select-Object -First 20\"",
-          "working_directory": null,
-          "timeout_seconds": 15
-        },
-        {
-          "name": "Show Current Working Directory",
-          "command": "cmd.exe /c echo %CD%",
-          "working_directory": "C:\\Windows\\System32",
-          "timeout_seconds": null
-        },
-        {
-          "name": "Echo Multiple Lines",
-          "command": "cmd.exe /c (echo Line 1 & echo Line 2 & echo Line 3 & echo Line 4 & echo Line 5)",
-          "working_directory": null,
-          "timeout_seconds": 10
+          "name": "Basic Commands",
+          "jobs": [
+            {
+              "name": "Echo Hello World",
+              "command": "cmd.exe /c echo Hello from Job Launcher!",
+              "working_directory": null,
+              "timeout_seconds": 10
+            },
+            {
+              "name": "Show Current Date and Time",
+              "command": "powershell.exe -Command \"Get-Date -Format 'yyyy-MM-dd HH:mm:ss'\"",
+              "working_directory": null,
+              "timeout_seconds": null
+            },
+            {
+              "name": "List C:\\ Root Directory (First 20 items)",
+              "command": "cmd.exe /c dir C:\\ /b | powershell.exe -Command \"$input | Select-Object -First 20\"",
+              "working_directory": null,
+              "timeout_seconds": 15
+            },
+            {
+              "name": "Show Current Working Directory",
+              "command": "cmd.exe /c echo %CD%",
+              "working_directory": "C:\\Windows\\System32",
+              "timeout_seconds": null
+            },
+            {
+              "name": "Echo Multiple Lines",
+              "command": "cmd.exe /c (echo Line 1 & echo Line 2 & echo Line 3 & echo Line 4 & echo Line 5)",
+              "working_directory": null,
+              "timeout_seconds": 10
+            }
+          ]
         }
       ]
     },
     {
-      "name": "System Information",
-      "jobs": [
+      "name": "System",
+      "groups": [
         {
-          "name": "Show Windows Version",
-          "command": "cmd.exe /c ver",
-          "working_directory": null,
-          "timeout_seconds": null
+          "name": "System Information",
+          "jobs": [
+            {
+              "name": "Show Windows Version",
+              "command": "cmd.exe /c ver",
+              "working_directory": null,
+              "timeout_seconds": null
+            },
+            {
+              "name": "Show Environment Variables (PATH sample)",
+              "command": "cmd.exe /c echo %PATH%",
+              "working_directory": null,
+              "timeout_seconds": null
+            },
+            {
+              "name": "Get Current Username",
+              "command": "powershell.exe -Command \"Write-Host 'Current user:' $env:USERNAME\"",
+              "working_directory": null,
+              "timeout_seconds": null
+            },
+            {
+              "name": "Show Computer Name",
+              "command": "powershell.exe -Command \"Write-Host 'Computer name:' $env:COMPUTERNAME\"",
+              "working_directory": null,
+              "timeout_seconds": null
+            },
+            {
+              "name": "List Running Processes (First 10)",
+              "command": "powershell.exe -Command \"Get-Process | Select-Object -First 10 Name, CPU | Format-Table -AutoSize\"",
+              "working_directory": null,
+              "timeout_seconds": 20
+            }
+          ]
         },
         {
-          "name": "Show Environment Variables (PATH sample)",
-          "command": "cmd.exe /c echo %PATH%",
-          "working_directory": null,
-          "timeout_seconds": null
-        },
-        {
-          "name": "Get Current Username",
-          "command": "powershell.exe -Command \"Write-Host 'Current user:' $env:USERNAME\"",
-          "working_directory": null,
-          "timeout_seconds": null
-        },
-        {
-          "name": "Show Computer Name",
-          "command": "powershell.exe -Command \"Write-Host 'Computer name:' $env:COMPUTERNAME\"",
-          "working_directory": null,
-          "timeout_seconds": null
-        },
-        {
-          "name": "List Running Processes (First 10)",
-          "command": "powershell.exe -Command \"Get-Process | Select-Object -First 10 Name, CPU | Format-Table -AutoSize\"",
-          "working_directory": null,
-          "timeout_seconds": 20
+          "name": "Network Info",
+          "jobs": [
+            {
+              "name": "Show IP Configuration (IPv4 only)",
+              "command": "cmd.exe /c ipconfig | findstr IPv4",
+              "working_directory": null,
+              "timeout_seconds": 15
+            },
+            {
+              "name": "Ping Localhost (2 packets)",
+              "command": "cmd.exe /c ping 127.0.0.1 -n 2",
+              "working_directory": null,
+              "timeout_seconds": 10
+            },
+            {
+              "name": "DNS Lookup (google.com)",
+              "command": "cmd.exe /c nslookup google.com",
+              "working_directory": null,
+              "timeout_seconds": 15
+            }
+          ]
         }
       ]
     },
     {
-      "name": "Network Info",
-      "jobs": [
+      "name": "Tests",
+      "groups": [
         {
-          "name": "Show IP Configuration (IPv4 only)",
-          "command": "cmd.exe /c ipconfig | findstr IPv4",
-          "working_directory": null,
-          "timeout_seconds": 15
+          "name": "Test - Timeout & Kill",
+          "jobs": [
+            {
+              "name": "Slow Job (Test Timeout - 25s)",
+              "command": "powershell.exe -Command \"1..25 | ForEach-Object { Write-Host 'Step' $_; Start-Sleep -Seconds 1 }; Write-Host 'Done'\"",
+              "working_directory": null,
+              "timeout_seconds": 10
+            },
+            {
+              "name": "Very Slow Job (Test Kill - 60s)",
+              "command": "powershell.exe -Command \"1..60 | ForEach-Object { Write-Host 'Waiting...' $_; Start-Sleep -Seconds 1 }; Write-Host 'Finished'\"",
+              "working_directory": null,
+              "timeout_seconds": 60
+            },
+            {
+              "name": "Test Error Output (stderr only)",
+              "command": "powershell.exe -Command \"Write-Error 'This is a test error message (harmless)'; Write-Host 'But stdout still works'\"",
+              "working_directory": null,
+              "timeout_seconds": 10
+            },
+            {
+              "name": "Success Then Error Exit Code",
+              "command": "cmd.exe /c echo This command will exit with code 1 & exit 1",
+              "working_directory": null,
+              "timeout_seconds": 10
+            }
+          ]
         },
         {
-          "name": "Ping Localhost (2 packets)",
-          "command": "cmd.exe /c ping 127.0.0.1 -n 2",
-          "working_directory": null,
-          "timeout_seconds": 10
-        },
-        {
-          "name": "DNS Lookup (google.com)",
-          "command": "cmd.exe /c nslookup google.com",
-          "working_directory": null,
-          "timeout_seconds": 15
-        }
-      ]
-    },
-    {
-      "name": "Test - Timeout & Kill",
-      "jobs": [
-        {
-          "name": "Slow Job (Test Timeout - 25s)",
-          "command": "powershell.exe -Command \"1..25 | ForEach-Object { Write-Host 'Step' $_; Start-Sleep -Seconds 1 }; Write-Host 'Done'\"",
-          "working_directory": null,
-          "timeout_seconds": 10
-        },
-        {
-          "name": "Very Slow Job (Test Kill - 60s)",
-          "command": "powershell.exe -Command \"1..60 | ForEach-Object { Write-Host 'Waiting...' $_; Start-Sleep -Seconds 1 }; Write-Host 'Finished'\"",
-          "working_directory": null,
-          "timeout_seconds": 60
-        },
-        {
-          "name": "Test Error Output (stderr only)",
-          "command": "powershell.exe -Command \"Write-Error 'This is a test error message (harmless)'; Write-Host 'But stdout still works'\"",
-          "working_directory": null,
-          "timeout_seconds": 10
-        },
-        {
-          "name": "Success Then Error Exit Code",
-          "command": "cmd.exe /c echo This command will exit with code 1 & exit 1",
-          "working_directory": null,
-          "timeout_seconds": 10
-        }
-      ]
-    },
-    {
-      "name": "Test - Error Handling",
-      "jobs": [
-        {
-          "name": "Missing Working Directory (Should Fail Fast)",
-          "command": "cmd.exe /c echo This should not run",
-          "working_directory": "C:\\ThisDirectoryDoesNotExist_ABCDEF",
-          "timeout_seconds": 5
-        },
-        {
-          "name": "Long Running (Kill Button Test - 120s)",
-          "command": "powershell.exe -Command \"1..120 | ForEach-Object { Write-Host 'Alive at second' $_; Start-Sleep -Seconds 1 }\"",
-          "working_directory": null,
-          "timeout_seconds": 120
+          "name": "Test - Error Handling",
+          "jobs": [
+            {
+              "name": "Missing Working Directory (Should Fail Fast)",
+              "command": "cmd.exe /c echo This should not run",
+              "working_directory": "C:\\ThisDirectoryDoesNotExist_ABCDEF",
+              "timeout_seconds": 5
+            },
+            {
+              "name": "Long Running (Kill Button Test - 120s)",
+              "command": "powershell.exe -Command \"1..120 | ForEach-Object { Write-Host 'Alive at second' $_; Start-Sleep -Seconds 1 }\"",
+              "working_directory": null,
+              "timeout_seconds": 120
+            }
+          ]
         }
       ]
     }
