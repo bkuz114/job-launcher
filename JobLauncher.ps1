@@ -113,7 +113,6 @@ $script:StatusLabel = $null                 # Reference to UI control
 $script:JobButtons = @{}                    # Dictionary mapping job name to button control
 $script:KillButton = $null                  # Reference to Kill button
 $script:MainForm = $null                    # Reference to main window
-$script:GroupListBox = $null                # Reference to groups ListBox
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -994,7 +993,6 @@ function Build-GUI {
     # =========================================================================
     $script:OutputTextBox = $outputTextBox
     $script:StatusLabel = $statusLabel
-    $script:GroupListBox = $listBox
     $script:MainForm = $form
     $script:ButtonPanel = $buttonPanel
 
