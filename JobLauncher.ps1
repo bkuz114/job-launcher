@@ -1002,11 +1002,12 @@ function Build-GUI {
     # RETURN CONTROLS FOR FUNCTIONS THAT NEED THEM
     # =========================================================================
     $formControls = @{
-        Form         = $form
-        ListBox      = $listBox
-        ButtonPanel  = $buttonPanel
-        RightPanel   = $rightPanel
-        Toolbar      = $toolbar
+        SplitContainer = $splitContainer
+        Form           = $form
+        ListBox        = $listBox
+        ButtonPanel    = $buttonPanel
+        RightPanel     = $rightPanel
+        Toolbar        = $toolbar
     }
 
     return $formControls
@@ -1385,6 +1386,41 @@ function SetGroup {
     Apply-Theme -themeName $groupTheme
 }
 
+<#
+.SYNOPSIS
+    Calculates the maximum pixel width required to display all items in a ListBox.
+
+.DESCRIPTION
+    Measures the text width of each item in the ListBox using the control's font.
+    Returns the width of the widest item. Useful for auto-sizing parent containers
+    like SplitContainer panels.
+
+.PARAMETER ListBox
+    The ListBox control whose items will be measured.
+
+.EXAMPLE
+    $maxWidth = Measure-ListBoxMaxWidth -ListBox $listBox
+    $splitContainer.SplitterDistance = $maxWidth + 20
+
+.NOTES
+    Returns 0 if the ListBox has no items. Uses TextRenderer.MeasureText
+    for accurate pixel measurement.
+#>
+function Measure-ListBoxMaxWidth {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Windows.Forms.ListBox]$ListBox
+    )
+
+    $maxWidth = 0
+    $font = $ListBox.Font
+    foreach ($item in $ListBox.Items) {
+        $size = [System.Windows.Forms.TextRenderer]::MeasureText($item.ToString(), $font)
+        if ($size.Width -gt $maxWidth) { $maxWidth = $size.Width }
+    }
+    return $maxWidth
+}
+
 function Populate-GUI {
 
     # Defensive check
@@ -1415,6 +1451,12 @@ function Populate-GUI {
             SetGroup -Group $selectedGroup
         }
     })
+
+    # Update width of left panel appropriately
+    $maxWidth = Measure-ListBoxMaxWidth -ListBox $script:FormControls.ListBox
+    if ($script:FormControls.SplitContainer) {
+        $script:FormControls.SplitContainer.SplitterDistance = $maxWidth + 40  # Add padding
+    }
 
     # Trigger initial population
     if ($script:FormControls.ListBox.Items.Count -gt 0) {
