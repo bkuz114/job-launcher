@@ -1550,7 +1550,7 @@ function Populate-GUI {
     # Update width of left panel appropriately
     $maxWidth = Measure-ListBoxMaxWidth -ListBox $listBox
     if ($script:FormControls.SplitContainer) {
-        $script:FormControls.SplitContainer.SplitterDistance = $maxWidth + 40  # Add padding
+        $script:FormControls.SplitContainer.SplitterDistance = $maxWidth
     }
 }
 
