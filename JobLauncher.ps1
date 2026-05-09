@@ -697,7 +697,7 @@ function Load-Themes {
 
     Builds $script:ListItems with two item types:
     - Type "category" for category headers (non-selectable, visual separation)
-    - Type "group" for selectable groups (stores original group object in .Group)
+    - Type "group" for selectable groups (stores original group object in .Node)
 
     Throws terminating errors for any missing required fields or empty collections.
 
@@ -731,7 +731,7 @@ function Load-HierarchicalConfig {
         $script:ListItems += @{
             Type = "category"
             Label = $category.name
-            Category = $category
+            Node = $category
         }
 
         # Validate each group has name and jobs
@@ -749,7 +749,7 @@ function Load-HierarchicalConfig {
             $script:ListItems += @{
                 Type = "group"
                 Label = $group.name
-                Group = $group
+                Node = $group
             }
         }
     }
@@ -1816,7 +1816,7 @@ function Populate-TreeView {
             # store entire Category object in Tag for use later
             $categoryNode.Tag = @{
                 Type = "category"
-                Category = $item.Category
+                Node = $item.Node
             }
             $null = $treeView.Nodes.Add($categoryNode)
         } elseif ($item.Type -eq "group") {
@@ -1825,7 +1825,7 @@ function Populate-TreeView {
             # store entire Group object in Tag for use later
             $groupNode.Tag = @{
                 Type = "group"
-                Group = $item.Group
+                Node = $item.Node
             }
             if ($treeView.Nodes.Count -gt 0) {
                 $lastCategory = $treeView.Nodes[$treeView.Nodes.Count - 1]
@@ -1858,7 +1858,7 @@ function Populate-TreeView {
                     return;
                 }
                 "group" {
-                    Set-Group -Group $node.Tag.Group
+                    Set-Group -Group $node.Tag.Node
                 }
             }
         }
@@ -1868,7 +1868,7 @@ function Populate-TreeView {
     if ($treeView.Nodes.Count -gt 0 -and $treeView.Nodes[0].Nodes.Count -gt 0) {
         $firstGroupNode = $treeView.Nodes[0].Nodes[0]
         $treeView.SelectedNode = $firstGroupNode
-        Set-Group -Group $firstGroupNode.Tag.Group
+        Set-Group -Group $firstGroupNode.Tag.Node
     }
 }
 
@@ -1916,7 +1916,7 @@ function Populate-ListWithDividers {
     for ($i = 0; $i -lt $listBox.Items.Count; $i++) {
         if ($listBox.Items[$i].Type -eq "group") {
             $listBox.SelectedIndex = $i
-            Set-Group -Group $listBox.Items[$i].Group
+            Set-Group -Group $listBox.Items[$i].Node
             break
         }
     }
@@ -1931,7 +1931,7 @@ function Populate-ListWithDividers {
             if ($selectedItem.Type -eq "category") {
                 $sender.SelectedIndex = -1
             } elseif ($selectedItem.Type -eq "group") {
-                Set-Group -Group $selectedItem.Group
+                Set-Group -Group $selectedItem.Node
             }
         }
     })
