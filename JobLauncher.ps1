@@ -106,7 +106,6 @@ $DefaultLogsDirectory = Join-Path -Path (Split-Path -Path $script:MyInvocation.M
 
 # Script-scoped variables (not global scope, but accessible to functions defined below)
 $script:CurrentRunningJob = $null           # Hashtable with: Process, JobName, Button, StartTime
-$script:GroupsData = $null                  # Parsed JSON groups array
 $script:HasCategories = $false              # If Parsed JSON has top level "categories"
 $script:Settings = $null                    # Parsed JSON settings object
 $script:OutputTextBox = $null               # Reference to UI control
@@ -746,6 +745,7 @@ function Load-HierarchicalConfig {
                 if ([string]::IsNullOrWhiteSpace($job.command)) { throw "Job '$($job.name)' missing 'command' field" }
             }
 
+            # add group to global ListItems
             $script:ListItems += @{
                 Type = "group"
                 Label = $group.name
@@ -763,7 +763,7 @@ function Load-HierarchicalConfig {
     Processes the JSON configuration when it contains a "groups" array (and no "categories").
     Validates each group has a name, a non-empty jobs array, and each job has a name and command.
 
-    Stores the validated groups in $script:GroupsData for use by Populate-FlatList.
+    Stores the validated groups in $script:ListItems for use by Populate-FlatList.
 
 .PARAMETER Config
     The PSCustomObject from ConvertFrom-Json containing the full configuration.
@@ -772,7 +772,7 @@ function Load-HierarchicalConfig {
     Load-FlatConfig -Config $config
 
 .NOTES
-    Sets $script:GroupsData. Caller is responsible for setting $script:HasCategories = $false.
+    Sets $script:ListItems. Caller is responsible for setting $script:HasCategories = $false.
     Does NOT set $script:Settings – that is handled separately in Load-Configuration.
 #>
 function Load-FlatConfig {
@@ -783,6 +783,8 @@ function Load-FlatConfig {
 
     if (-not $config.groups) { throw "Missing 'groups' array" }
     if ($config.groups.Count -eq 0) { throw "No groups defined in configuration" }
+
+    $script:ListItems = @()
 
     # Validate each group has name and jobs
     foreach ($group in $config.groups) {
@@ -795,10 +797,24 @@ function Load-FlatConfig {
             if ([string]::IsNullOrWhiteSpace($job.name)) { throw "Job missing 'name' field in group '$($group.name)'" }
             if ([string]::IsNullOrWhiteSpace($job.command)) { throw "Job '$($job.name)' missing 'command' field" }
         }
-    }
 
-    # Store globally
-    $script:GroupsData = $config.groups
+        # add entry with custom ToString function
+        # (will be needed for when adding to ListBox
+        # so it will know what to draw without having
+        # to attach some complicated Add_Draw event)
+        $groupItem = [PSCustomObject]@{
+            Type = "group"
+            Label = $group.name
+            Node = $group
+        }
+        # DO NOT REMOVE THIS. It's what allows you to add these items to $script:FormControls.ListBox
+        # and the system will know what to "draw", without having to add a Draw event which screws up
+        # width. And you NEED to add the entire group object (Rather than just the name) into the ListBox
+        # so that the ListBox data structure will be uniform across both hierarchical and flat case
+        # (instead of strings in one, and objects in another)
+        $groupItem | Add-Member -MemberType ScriptMethod -Name ToString -Value { $this.Label } -Force
+        $script:ListItems += $groupItem
+    }
 }
 
 <#
@@ -825,7 +841,7 @@ function Load-FlatConfig {
     On success, sets:
     - $script:Settings from config.settings
     - $script:HasCategories = $true (if categories used) or $false (if groups used)
-    - $script:ListItems (hierarchical mode) or $script:GroupsData (flat mode)
+    - $script:ListItems
 
     On failure, shows a MessageBox error and returns $false.
     Does NOT exit the script – caller should handle the failure.
@@ -854,14 +870,10 @@ function Load-Configuration {
             # JSON has high level "categories" field -- hierarchical structure
             Load-HierarchicalConfig -Config $config
             $script:HasCategories = $true
-            # set flat GroupsData to null
-            $script:GroupsData = $null
         } elseif ($config.PSObject.Properties['groups']) {
             # JSON has high level "groups" field -- flat structure
             Load-FlatConfig -Config $config
             $script:HasCategories = $false
-            # set hierarchical data to null
-            $script:ListItems = $null
         } else {
             throw "JSON must have either 'categories' or 'groups' array"
         }
@@ -1731,7 +1743,7 @@ function Measure-ListBoxMaxWidth {
 
 .NOTES
     Called by Populate-GUI when $script:HasCategories = $false.
-    Requires $script:GroupsData to be populated (by Load-FlatConfig).
+    Requires $script:ListItems to be populated (by Load-FlatConfig).
     Requires $script:FormControls.LeftPanel to exist (created in Build-GUI).
 #>
 function Populate-FlatList {
@@ -1743,12 +1755,15 @@ function Populate-FlatList {
     $null = $script:FormControls.LeftPanel.Controls.Add($listBox)
     $script:FormControls.ListBox = $listBox
 
-    # Get group names directly from GroupsData array
-    $groups = $script:GroupsData | ForEach-Object { $_.name }
-
     # Populate ListBox
     $script:FormControls.ListBox.Items.Clear()
-    foreach ($group in $groups) {
+    foreach ($group in $script:ListItems) {
+        # You can add the $group objects directly as added a custom
+        # toString() function on them which makes .Label the string
+        # representation of the object. Doing this because when I used
+        # Initialize-ListBox to create the ListBox, the Add_Draw event
+        # screwed up width and height, and none of it was needed for
+        # the flat case anyway.
         $null = $script:FormControls.ListBox.Items.Add($group)
     }
 
@@ -1758,16 +1773,16 @@ function Populate-FlatList {
 
     # Bind selection change event
     $script:FormControls.ListBox.Add_SelectedIndexChanged({
-        if ($script:FormControls.ListBox.SelectedItem -and $script:GroupsData) {
+        if ($script:FormControls.ListBox.SelectedItem) {
             $selectedIndex = $script:FormControls.ListBox.SelectedIndex
-            $selectedGroup = $script:GroupsData[$selectedIndex]
+            $selectedGroup = $script:FormControls.ListBox.Items[$selectedIndex].Node
             Set-Group -Group $selectedGroup
         }
     })
 
     # Trigger initial population
     if ($script:FormControls.ListBox.Items.Count -gt 0) {
-        $selectedGroup = $script:GroupsData[0]
+        $selectedGroup = $script:FormControls.ListBox.Items[0].Node
         Set-Group -Group $selectedGroup
     }
 
