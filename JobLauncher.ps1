@@ -1819,19 +1819,13 @@ function Populate-TreeView {
             # Create category node (parent)
             $categoryNode = New-Object System.Windows.Forms.TreeNode($item.Label)
             # store entire Category object in Tag for use later
-            $categoryNode.Tag = @{
-                Type = "category"
-                Node = $item.Node
-            }
+            $categoryNode.Tag = $item
             $null = $treeView.Nodes.Add($categoryNode)
         } elseif ($item.Type -eq "group") {
             # This item is a group – add to the last category node
             $groupNode = New-Object System.Windows.Forms.TreeNode($item.Label)
             # store entire Group object in Tag for use later
-            $groupNode.Tag = @{
-                Type = "group"
-                Node = $item.Node
-            }
+            $groupNode.Tag = $item
             if ($treeView.Nodes.Count -gt 0) {
                 $lastCategory = $treeView.Nodes[$treeView.Nodes.Count - 1]
                 $null = $lastCategory.Nodes.Add($groupNode)
