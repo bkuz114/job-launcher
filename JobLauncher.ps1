@@ -106,6 +106,7 @@ $DefaultLogsDirectory = Join-Path -Path (Split-Path -Path $script:MyInvocation.M
 
 # Script-scoped variables (not global scope, but accessible to functions defined below)
 $script:CurrentRunningJob = $null           # Hashtable with: Process, JobName, Button, StartTime
+$script:CurrentItem = $null                 # Curr selected group or category (for preserving through view toggles)
 $script:HasCategories = $false              # If Parsed JSON has top level "categories"
 $script:Settings = $null                    # Parsed JSON settings object
 $script:OutputTextBox = $null               # Reference to UI control
@@ -1688,6 +1689,9 @@ function Set-Item {
         [Hashtable]$Item
     )
 
+    # update current selected item
+    $script:CurrentItem = $Item
+
     if ($Item.Type -eq "group") {
         # Create buttons for this group
         UpdateButtonsForGroup -Group $Item.Node
@@ -2041,6 +2045,133 @@ function Set-ToggleButton {
 
 <#
 .SYNOPSIS
+    Finds a TreeNode in a TreeView by matching its Tag.Label property.
+.DESCRIPTION
+    Searches all category and group nodes for a node whose Tag.Label equals the specified name.
+    Returns the first matching node, or $null if not found.
+.PARAMETER Tree
+    The TreeView control to search.
+.PARAMETER NodeName
+    The Label value to match against node.Tag.Label.
+.OUTPUTS
+    System.Windows.Forms.TreeNode or $null
+#>
+function Find-MatchingTreeNode {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Windows.Forms.TreeView]$Tree,
+        [Parameter(Mandatory = $false)]
+        [String]$NodeName
+    )
+
+    for ($i = 0; $i -lt $Tree.Nodes.Count; $i++) {
+        if ($Tree.Nodes[$i].Tag.Label -eq $NodeName) {
+            # matching category
+            return $Tree.Nodes[$i]
+        }
+        for ($j = 0; $j -lt $Tree.Nodes[$i].Nodes.Count; $j++) {
+            if ($Tree.Nodes[$i].Nodes[$j].Tag.Label -eq $NodeName) {
+                # matching group
+                return $Tree.Nodes[$i].Nodes[$j]
+            }
+        }
+    }
+}
+
+<#
+.SYNOPSIS
+    Selects a Node in TreeView (highlights it via .SelectedNode property and triggers Set-Item.)
+.DESCRIPTION
+    Called by Initialize-LeftPanel when switching views. Attempts to find a node
+    matching the provided Item (by Label). If found, selects it and calls Set-Item.
+    If no Item provided, selects the first group node (first child of first category).
+.PARAMETER Tree
+    The TreeView control to initialize.
+.PARAMETER Item
+    Optional hashtable (from $script:CurrentItem) representing a specific Item to select.
+    If $null, selects the first group node.
+#>
+function Initialize-TreeViewItem {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Windows.Forms.TreeView]$Tree,
+        [Parameter(Mandatory = $false)]
+        [Hashtable]$Item
+    )
+
+    $nodeToSelect = $null
+    if ($Item -ne $null) {
+        # Find node in tree matching item name
+        $nodeToSelect = Find-MatchingTreeNode -Tree $Tree -NodeName $Item.Label
+    } else {
+        # Item null or not passed
+        # Select the first group node (first child of first category)
+        if ($Tree.Nodes.Count -gt 0 -and $Tree.Nodes[0].Nodes.Count -gt 0) {
+            $nodeToSelect = $Tree.Nodes[0].Nodes[0]
+        }
+    }
+
+    if ($nodeToSelect -ne $null) {
+        # found a match: initialize to this node by highlighting
+        # in the panel and setting theme, loading job buttons
+        $Tree.SelectedNode = $nodeToSelect
+        Set-Item -Item $nodeToSelect.Tag
+    } else {
+        Write-Host "DEBUG: Could not determine TreeView node to intiailize"
+    }
+}
+
+<#
+.SYNOPSIS
+    Selects a Node in ListBox (highlights it via .SelectedNode property and triggers Set-Item.)
+.DESCRIPTION
+    Called by Initialize-LeftPanel when switching views. Attempts to find an item
+    matching the provided Item (by Label). If found, selects it and calls Set-Item.
+    If no Item provided, selects the first group item (skipping dividers).
+.PARAMETER List
+    The ListBox control to initialize.
+.PARAMETER Item
+    Optional hashtable (from $script:CurrentItem) representing specific node to initialize to.
+    If $null, selects the first group item.
+#>
+function Initialize-ListBoxItem {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Windows.Forms.ListBox]$List,
+        [Parameter(Mandatory = $false)]
+        [Hashtable]$Item
+    )
+
+    $matchingIndex = -1
+    if ($Item -ne $null) {
+        # Find node in list matching item name
+        for ($i = 0; $i -lt $List.Items.Count; $i++) {
+            if ($List.Items[$i].Label -eq $Item.Label) {
+                $matchingIndex = $i
+                break
+            }
+        }
+    } else {
+        # Select first non-divider item
+        for ($i = 0; $i -lt $List.Items.Count; $i++) {
+            if ($List.Items[$i].Type -eq "group") {
+                $matchingIndex = $i
+                break
+            }
+        }
+    }
+
+    # If found match, initialize by highlighting, setting theme and loading job buttons
+    if ($matchingIndex -gt -1) {
+        $List.SelectedIndex = $matchingIndex
+        Set-Item -Item $List.Items[$matchingIndex]
+    } else {
+        Write-Host "DEBUG: Could not determine ListBox node to intiailize"
+    }
+}
+
+<#
+.SYNOPSIS
     Initializes the left panel by selecting the first selectable item (group).
 
 .DESCRIPTION
@@ -2059,25 +2190,15 @@ function Set-ToggleButton {
     - Throws if neither TreeView nor ListBox exists (should not happen in normal operation).
 #>
 function Initialize-LeftPanel {
+    param(
+        [Parameter(Mandatory = $false)]
+        [Hashtable]$Item
+    )
+
     if ($script:FormControls.ContainsKey('TreeView') -and $script:FormControls.TreeView) {
-        # Select the first group node (first child of first category)
-        $tree = $script:FormControls.TreeView
-        if ($tree.Nodes.Count -gt 0 -and $tree.Nodes[0].Nodes.Count -gt 0) {
-            $firstGroupNode = $tree.Nodes[0].Nodes[0]
-            $tree.SelectedNode = $firstGroupNode
-            Set-Item -Item $firstGroupNode.Tag
-        }
+        Initialize-TreeViewItem -Tree $script:FormControls.TreeView -Item $Item
     } elseif ($script:FormControls.ContainsKey('ListBox') -and $script:FormControls.ListBox) {
-        # Select first non-divider item and trigger initial population
-        $list = $script:FormControls.ListBox
-        for ($i = 0; $i -lt $list.Items.Count; $i++) {
-            $listBoxItem = $list.Items[$i]
-            if ($listBoxItem.Type -eq "group") {
-                $list.SelectedIndex = $i
-                Set-Item -Item $listBoxItem
-                break
-            }
-        }
+        Initialize-ListBoxItem -List $script:FormControls.ListBox -Item $Item
     } else {
         throw "Can't initialize LeftPanel: no TreeView or ListBox were created"
     }
@@ -2102,6 +2223,10 @@ function Initialize-LeftPanel {
     the container panel created in Build-GUI.
 #>
 function Populate-GUI {
+
+    # save initial state
+    $currSelectedItem = $script:CurrentItem
+
     # if JSON has "categories" key, create tree or list hierarchy based on "view" setting
     if ($script:HasCategories) {
         # Create toggle button if it doesn't exist
@@ -2141,7 +2266,7 @@ function Populate-GUI {
         Populate-FlatList
     }
 
-    Initialize-LeftPanel
+    Initialize-LeftPanel -Item $currSelectedItem
 }
 
 # =============================================================================
