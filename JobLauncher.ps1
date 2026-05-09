@@ -750,6 +750,7 @@ function Load-HierarchicalConfig {
                 Type = "group"
                 Label = $group.name
                 Node = $group
+                Parent = $category  # add parent category to retrieve theme from
             }
         }
     }
@@ -1395,7 +1396,7 @@ function Get-ThemeColor {
     Apply-Theme -themeName "default"
 
 .NOTES
-    This function is called by Set-Group after UpdateButtonsForGroup has created
+    This function is called by Set-Item after UpdateButtonsForGroup has created
     the job buttons. It assumes $script:JobButtons is populated with all
     current buttons.
 
@@ -1536,41 +1537,64 @@ function Initialize-Theme {
 
 <#
 .SYNOPSIS
-    Determines the theme name for a specific group based on configuration.
+    Determines the theme name for a specific item (Category or Group) based on configuration.
 
 .DESCRIPTION
     Evaluates theme selection priority:
-        1. Group's own 'theme' property (if defined in JSON)
-        2. Global 'settings.theme' (if defined in JSON)
-        3. Falls back to "default"
+        1. User select theme from dropdown
+        2. Group 'theme' property (if defined in JSON)
+        3. Category 'theme' property (either this ones, if Item is
+           a Category, or parent Category's if Item is a Group)
+           (if defined in JSON)
+        4. Global 'settings.theme' (if defined in JSON)
+        5. Falls back to "default"
 
     This function performs validation only to the extent of checking
     property existence in the PSCustomObject from JSON. It does NOT
     verify that the theme name exists in $Script:Themes.
 
-.PARAMETER Group
-    The group object containing optional .theme property.
+.PARAMETER Item
+    The target item. One of the Hashtable in $script:ListItems set by Load-Config (which parses JSON)
+    Contains .Type, .Label, .Parent (if from a "group" node in JSON), and .Node. .Node is the
+    PSObject for the JSON node, which contains .name, .jobs (if Group), .groups (if Category),
+    and optionally .theme.
 
 .EXAMPLE
-    $themeName = Get-GroupTheme -Group $selectedGroup
+    $themeName = Get-ItemTheme -Item $selectedGroup
+    $themeName = Get-ItemTheme -Item $selectedCategory
 
 .NOTES
-    Returns a string. Does not modify global state. Caller should pass
-    the returned name to Set-Theme.
+    - $Item should be one of the hashtables in $script:ListItems (populated by Load-Config,
+      which parses JSON and creates hashtables for each category or group node found)
+      These hashtables have .Node property, which is the PSObject for the JSON data for
+      that node. Group nodes also have a .Parent property, which is the PSObject for the JSON
+      data for the parent category node. Both .Node and .Parent objects contain the JSON data
+      for that node, i.e. "name", "theme" (optionally), others.
+    - Returns a string. Does not modify global state. Caller should pass
+      the returned name to Set-Theme.
 #>
-function Get-GroupTheme {
-    param([PSObject]$Group)
+function Get-ItemTheme {
+    param(
+        [Parameter(Mandatory = $true)]
+        [Hashtable]$Item
+    )
 
     # User override takes highest priority
     if ($script:UserSelectedTheme) {
         return $script:UserSelectedTheme
     }
 
-    # Resolve theme name (group > settings > "default")
-    if ($Group.PSObject.Properties['theme'] -and $Group.theme) {
-        return $Group.theme
+    # Resolve theme name (group > category > settings > "default")
+    if ($Item.containsKey("Node") -and $Item.Node.PSObject.Properties['theme'] -and $Item.Node.theme) {
+        # own "theme" property (regardless if Category or Group)
+        return $Item.Node.theme
+    }
+    if ($Item.containsKey("Parent") -and $Item.Parent.PSObject.Properties['theme'] -and $Item.Parent.theme) {
+        # only Group have Parent property which would be a Category
+        return $Item.Parent.theme
     }
     if ($script:Settings.PSObject.Properties['theme'] -and $script:Settings.theme) {
+        # JSON global theme in "settings"
         return $script:Settings.theme
     }
     return "default"
@@ -1616,27 +1640,41 @@ function Set-Theme {
 
 <#
 .SYNOPSIS
-    Switches the UI to display a different job group.
+    Switches the UI to display a different job item (group or category).
 
 .DESCRIPTION
-    Orchestrates the full UI refresh when a user selects a new group from the
-    left panel. This function is the single entry point for group changes.
+    Orchestrates the full UI refresh when a user selects a new item from the
+    left panel. This function is the single entry point for item changes.
 
     Steps performed:
-    1. Recreates all job buttons for the new group (UpdateButtonsForGroup)
+    1. (if item is a group): Recreates all job buttons for the new group (UpdateButtonsForGroup)
     2. Applies color theme to all UI elements (Apply-Theme)
 
     Separating button recreation from theme application keeps concerns clean
     and allows theme to be reapplied without rebuilding buttons if needed.
 
-.PARAMETER Group
-    The target group object. Contains .name, .jobs,
+.PARAMETER Item
+    The target item. One of the Hashtable in $script:ListItems set by Load-Config (which parses JSON)
+    Contains .Type, .Label, Parent (if from a "group" node in JSON), and .Node. .Node is the
+    PSObject for the JSON node, which contains .name, .jobs (if Group), .groups (if Category),
     and optionally .theme.
 
 .EXAMPLE
-    Set-Group -Group $selectedGroup
+    Set-Item -Item $selectedGroup
+    Set-Item -Item $selectedCategory
 
 .NOTES
+    - Currently nothing happening in Category case other than theme set, 
+      but lumping in with Groups in Set-Item in case there is other unified
+      logic that needs to happen for both.
+    - $Item should be one of the hashtables in $script:ListItems (populated by Load-Config,
+      which parses JSON and creates hashtables for each category or group node found)
+      These hashtables have .Node property, which is the PSObject for the JSON data for
+      that node. Group nodes also have a .Parent property, which is the PSObject for the JSON
+      data for the parent category node. Both .Node and .Parent objects contain the JSON data
+      for that node, i.e. "name", "theme" (optionally), others.
+    - Should pass $Item when calling Get-ItemTheme, but $Item.Node when calling UpdateButtonsForGroup
+      (As it wants the JSON data directly)
     Called from:
     - Populate-GUI (initial load, selects the first group)
     - ListBox SelectedIndexChanged event (user clicks a different group)
@@ -1644,17 +1682,22 @@ function Set-Theme {
     Does not modify the ListBox selection itself - that is handled by the caller
     or user interaction. This function only responds to the selected group.
 #>
-function Set-Group {
-    param($Group)
+function Set-Item {
+    param(
+        [Parameter(Mandatory = $true)]
+        [Hashtable]$Item
+    )
 
-    # Create buttons for this group
-    UpdateButtonsForGroup -Group $Group
+    if ($Item.Type -eq "group") {
+        # Create buttons for this group
+        UpdateButtonsForGroup -Group $Item.Node
+    }
 
     # Get the theme name and set it
-    $groupTheme = Get-GroupTheme -Group $Group
+    $itemTheme = Get-ItemTheme -Item $Item
 
     # Apply theme (panel background, any other UI decorations)
-    Apply-Theme -themeName $groupTheme
+    Apply-Theme -themeName $itemTheme
 }
 
 <#
@@ -1738,7 +1781,7 @@ function Measure-ListBoxMaxWidth {
     This is the original pre-category behavior, preserved for backward compatibility
     and for users who prefer a simple, flat group list.
 
-    Sets $script:FormControls.ListBox and binds selection to Set-Group.
+    Sets $script:FormControls.ListBox and binds selection to Set-Item.
     Auto-sizes the left panel width based on the widest group name.
 
 .NOTES
@@ -1772,7 +1815,7 @@ function Populate-FlatList {
         if ($script:FormControls.ListBox.SelectedItem) {
             $selectedIndex = $script:FormControls.ListBox.SelectedIndex
             $selectedGroup = $script:FormControls.ListBox.Items[$selectedIndex].Node
-            Set-Group -Group $selectedGroup
+            Set-Item -Item $selectedGroup
         }
     })
 
@@ -1791,7 +1834,7 @@ function Populate-FlatList {
     Reads $script:ListItems (built by Load-Configuration) and builds a TreeView
     where each category is a parent node and each group is a child node.
     Category nodes have Tag = $null (not selectable). Group nodes have Tag = $group
-    object (used by Set-Group). Expands all categories by default, auto-sizes the
+    object (used by Set-Item). Expands all categories by default, auto-sizes the
     left panel width, and selects the first group node.
 
 .NOTES
@@ -1851,15 +1894,7 @@ function Populate-TreeView {
         param($sender, $e)
         $node = $e.Node
         if ($node.Tag -ne $null) {
-            switch ($node.Tag.Type) {
-                "category" {
-                    # for now just return in category case
-                    return;
-                }
-                "group" {
-                    Set-Group -Group $node.Tag.Node
-                }
-            }
+            Set-Item -Item $node.Tag
         }
     })
 }
@@ -1911,11 +1946,7 @@ function Populate-ListWithDividers {
         $selectedIndex = $sender.SelectedIndex
         if ($selectedIndex -ge 0) {
             $selectedItem = $sender.Items[$selectedIndex]
-            if ($selectedItem.Type -eq "category") {
-                $sender.SelectedIndex = -1
-            } elseif ($selectedItem.Type -eq "group") {
-                Set-Group -Group $selectedItem.Node
-            }
+            Set-Item -Item $selectedItem
         }
     })
 
@@ -2015,7 +2046,7 @@ function Set-ToggleButton {
 .DESCRIPTION
     Called after Populate-GUI creates either a TreeView or ListBox.
     Determines which control exists, selects the first group (not divider or category),
-    and triggers Set-Group to load the corresponding jobs and apply theme.
+    and triggers Set-Item to load the corresponding jobs and apply theme.
 
     This function replaces the scattered initialization logic that was duplicated
     across Populate-TreeView, Populate-ListWithDividers, and Populate-FlatList.
@@ -2034,7 +2065,7 @@ function Initialize-LeftPanel {
         if ($tree.Nodes.Count -gt 0 -and $tree.Nodes[0].Nodes.Count -gt 0) {
             $firstGroupNode = $tree.Nodes[0].Nodes[0]
             $tree.SelectedNode = $firstGroupNode
-            Set-Group -Group $firstGroupNode.Tag.Node
+            Set-Item -Item $firstGroupNode.Tag
         }
     } elseif ($script:FormControls.ContainsKey('ListBox') -and $script:FormControls.ListBox) {
         # Select first non-divider item and trigger initial population
@@ -2043,7 +2074,7 @@ function Initialize-LeftPanel {
             $listBoxItem = $list.Items[$i]
             if ($listBoxItem.Type -eq "group") {
                 $list.SelectedIndex = $i
-                Set-Group -Group $listBoxItem.Node
+                Set-Item -Item $listBoxItem
                 break
             }
         }
