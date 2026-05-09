@@ -1767,10 +1767,6 @@ function Populate-FlatList {
         $null = $script:FormControls.ListBox.Items.Add($group)
     }
 
-    if ($script:FormControls.ListBox.Items.Count -gt 0) {
-        $script:FormControls.ListBox.SelectedIndex = 0
-    }
-
     # Bind selection change event
     $script:FormControls.ListBox.Add_SelectedIndexChanged({
         if ($script:FormControls.ListBox.SelectedItem) {
@@ -1779,12 +1775,6 @@ function Populate-FlatList {
             Set-Group -Group $selectedGroup
         }
     })
-
-    # Trigger initial population
-    if ($script:FormControls.ListBox.Items.Count -gt 0) {
-        $selectedGroup = $script:FormControls.ListBox.Items[0].Node
-        Set-Group -Group $selectedGroup
-    }
 
     # Update width of left panel appropriately
     $maxWidth = Measure-ListBoxMaxWidth -ListBox $listBox
@@ -1878,13 +1868,6 @@ function Populate-TreeView {
             }
         }
     })
-
-    # Select the first group node (first child of first category)
-    if ($treeView.Nodes.Count -gt 0 -and $treeView.Nodes[0].Nodes.Count -gt 0) {
-        $firstGroupNode = $treeView.Nodes[0].Nodes[0]
-        $treeView.SelectedNode = $firstGroupNode
-        Set-Group -Group $firstGroupNode.Tag.Node
-    }
 }
 
 <#
@@ -1925,15 +1908,6 @@ function Populate-ListWithDividers {
     # Populate items from $script:ListItems
     foreach ($item in $script:ListItems) {
         $null = $listBox.Items.Add($item)
-    }
-
-    # Select first non-divider item and trigger initial population
-    for ($i = 0; $i -lt $listBox.Items.Count; $i++) {
-        if ($listBox.Items[$i].Type -eq "group") {
-            $listBox.SelectedIndex = $i
-            Set-Group -Group $listBox.Items[$i].Node
-            break
-        }
     }
 
     # Selection event
@@ -2042,6 +2016,50 @@ function Set-ToggleButton {
 
 <#
 .SYNOPSIS
+    Initializes the left panel by selecting the first selectable item (group).
+
+.DESCRIPTION
+    Called after Populate-GUI creates either a TreeView or ListBox.
+    Determines which control exists, selects the first group (not divider or category),
+    and triggers Set-Group to load the corresponding jobs and apply theme.
+
+    This function replaces the scattered initialization logic that was duplicated
+    across Populate-TreeView, Populate-ListWithDividers, and Populate-FlatList.
+
+.NOTES
+    - TreeView: selects the first child node of the first category node.
+      Expects Tag to be a hashtable with .Node property containing the group object.
+    - ListBox: iterates items and selects the first item with Type = "group".
+      Uses .SelectedIndex = $i (not .SelectedItem) to avoid type confusion.
+    - Throws if neither TreeView nor ListBox exists (should not happen in normal operation).
+#>
+function Initialize-LeftPanel {
+    if ($script:FormControls.ContainsKey('TreeView') -and $script:FormControls.TreeView) {
+        # Select the first group node (first child of first category)
+        $tree = $script:FormControls.TreeView
+        if ($tree.Nodes.Count -gt 0 -and $tree.Nodes[0].Nodes.Count -gt 0) {
+            $firstGroupNode = $tree.Nodes[0].Nodes[0]
+            $tree.SelectedNode = $firstGroupNode
+            Set-Group -Group $firstGroupNode.Tag.Node
+        }
+    } elseif ($script:FormControls.ContainsKey('ListBox') -and $script:FormControls.ListBox) {
+        # Select first non-divider item and trigger initial population
+        $list = $script:FormControls.ListBox
+        for ($i = 0; $i -lt $list.Items.Count; $i++) {
+            $listBoxItem = $list.Items[$i]
+            if ($listBoxItem.Type -eq "group") {
+                $list.SelectedIndex = $i
+                Set-Group -Group $listBoxItem.Node
+                break
+            }
+        }
+    } else {
+        throw "Can't initialize LeftPanel: no TreeView or ListBox were created"
+    }
+}
+
+<#
+.SYNOPSIS
     Entry point for populating the left panel based on the configured view.
 
 .DESCRIPTION
@@ -2097,6 +2115,8 @@ function Populate-GUI {
         # only groups
         Populate-FlatList
     }
+
+    Initialize-LeftPanel
 }
 
 # =============================================================================
