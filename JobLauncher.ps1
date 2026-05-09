@@ -728,11 +728,13 @@ function Load-HierarchicalConfig {
         if (-not $category.groups) { throw "Category '$($category.name)' missing 'groups' array" }
 
         # Add divider for category
-        $script:ListItems += @{
+        $categoryItem = [PSCustomObject]@{
             Type = "category"
             Label = $category.name
             Node = $category
         }
+        $categoryItem | Add-Member -MemberType ScriptMethod -Name ToString -Value { $this.Label } -Force
+        $script:ListItems += $categoryItem
 
         # Validate each group has name and jobs
         foreach ($group in $category.groups) {
@@ -747,12 +749,14 @@ function Load-HierarchicalConfig {
             }
 
             # add group to global ListItems
-            $script:ListItems += @{
+            $groupItem = [PSCustomObject]@{
                 Type = "group"
                 Label = $group.name
                 Node = $group
                 Parent = $category  # add parent category to retrieve theme from
             }
+            $groupItem | Add-Member -MemberType ScriptMethod -Name ToString -Value { $this.Label } -Force
+            $script:ListItems += $groupItem
         }
     }
 }
@@ -1577,7 +1581,7 @@ function Initialize-Theme {
 function Get-ItemTheme {
     param(
         [Parameter(Mandatory = $true)]
-        [Hashtable]$Item
+        [PSCustomObject]$Item
     )
 
     # User override takes highest priority
@@ -1586,11 +1590,11 @@ function Get-ItemTheme {
     }
 
     # Resolve theme name (group > category > settings > "default")
-    if ($Item.containsKey("Node") -and $Item.Node.PSObject.Properties['theme'] -and $Item.Node.theme) {
+    if ($Item.PSObject.Properties["Node"] -and $Item.Node.PSObject.Properties['theme'] -and $Item.Node.theme) {
         # own "theme" property (regardless if Category or Group)
         return $Item.Node.theme
     }
-    if ($Item.containsKey("Parent") -and $Item.Parent.PSObject.Properties['theme'] -and $Item.Parent.theme) {
+    if ($Item.PSObject.Properties["Parent"] -and $Item.Parent.PSObject.Properties['theme'] -and $Item.Parent.theme) {
         # only Group have Parent property which would be a Category
         return $Item.Parent.theme
     }
@@ -1686,7 +1690,7 @@ function Set-Theme {
 function Set-Item {
     param(
         [Parameter(Mandatory = $true)]
-        [Hashtable]$Item
+        [PSCustomObject]$Item
     )
 
     # update current selected item
@@ -1770,7 +1774,7 @@ function Measure-ListBoxMaxWidth {
         $size = [System.Windows.Forms.TextRenderer]::MeasureText($item.ToString(), $font)
         if ($size.Width -gt $maxWidth) { $maxWidth = $size.Width }
     }
-    return $maxWidth
+    return $maxWidth + 20
 }
 
 <#
@@ -1818,7 +1822,7 @@ function Populate-FlatList {
     $script:FormControls.ListBox.Add_SelectedIndexChanged({
         if ($script:FormControls.ListBox.SelectedItem) {
             $selectedIndex = $script:FormControls.ListBox.SelectedIndex
-            $selectedGroup = $script:FormControls.ListBox.Items[$selectedIndex].Node
+            $selectedGroup = $script:FormControls.ListBox.Items[$selectedIndex]
             Set-Item -Item $selectedGroup
         }
     })
@@ -1826,7 +1830,7 @@ function Populate-FlatList {
     # Update width of left panel appropriately
     $maxWidth = Measure-ListBoxMaxWidth -ListBox $listBox
     if ($script:FormControls.SplitContainer) {
-        $script:FormControls.SplitContainer.SplitterDistance = $maxWidth + 20  # Add padding
+        $script:FormControls.SplitContainer.SplitterDistance = $maxWidth
     }
 }
 
@@ -2096,7 +2100,7 @@ function Initialize-TreeViewItem {
         [Parameter(Mandatory = $true)]
         [System.Windows.Forms.TreeView]$Tree,
         [Parameter(Mandatory = $false)]
-        [Hashtable]$Item
+        [PSCustomObject]$Item
     )
 
     $nodeToSelect = $null
@@ -2139,7 +2143,7 @@ function Initialize-ListBoxItem {
         [Parameter(Mandatory = $true)]
         [System.Windows.Forms.ListBox]$List,
         [Parameter(Mandatory = $false)]
-        [Hashtable]$Item
+        [PSCustomObject]$Item
     )
 
     $matchingIndex = -1
@@ -2192,7 +2196,7 @@ function Initialize-ListBoxItem {
 function Initialize-LeftPanel {
     param(
         [Parameter(Mandatory = $false)]
-        [Hashtable]$Item
+        [PSCustomObject]$Item
     )
 
     if ($script:FormControls.ContainsKey('TreeView') -and $script:FormControls.TreeView) {
