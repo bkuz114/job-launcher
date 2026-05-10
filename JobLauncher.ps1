@@ -1146,6 +1146,14 @@ function Initialize-Toolbar {
     foreach ($themeName in $Script:Themes.Keys | Sort-Object) {
         $null = $themeCombo.Items.Add($themeName)
     }
+    # add a separator that does nothing, then reset
+    # option that will reset back to allowing JSON theme
+    # selection (e.g. that if a user clicks a new Group or
+    # Category with a theme set, it will switch to that --
+    # when a user has selected from the dropdown that functionality
+    # is temporarily prevented; reset will put it back)
+    $null = $themeCombo.Items.Add("---------------")
+    $null = $themeCombo.Items.Add("Reset")
     $themeCombo.SelectedItem = $script:CurrentThemeName
     $script:ThemeCombo = $themeCombo
 
@@ -1159,9 +1167,28 @@ function Initialize-Toolbar {
         }
 
         $selected = $this.SelectedItem.ToString()
-        Apply-Theme -themeName $selected
-        # set user selected theme so group switching won't override it
-        $script:UserSelectedTheme = $this.SelectedItem.ToString()
+        if ($selected.Contains("---")) {
+            # Ignore selection, revert to previous value
+            Set-Dropdown -Dropdown $this -NewValue $script:CurrentThemeName
+            return
+        } elseif ($selected -eq "Reset") {
+            # Reset selected:
+            # get theme for currently selected item and reset to that
+
+            # Reset global boolean UserSelectedTheme
+            # (Get-ItemTheme checks this boolean and if set it
+            # won't update Group / Category themes when selected)
+            $script:UserSelectedTheme = $null
+            # apply theme of currently selected Item
+            $themeToApply = Get-ItemTheme -Item $script:CurrentItem
+            Apply-Theme -themeName $themeToApply
+            return
+        } else {
+            # Regular user selection: apply theme and indicate user selection
+            Apply-Theme -themeName $selected
+            # set user selected theme so group switching won't override it
+            $script:UserSelectedTheme = $this.SelectedItem.ToString()
+        }
     })
 
     $null = $themePanel.Controls.Add($themeLabel)
