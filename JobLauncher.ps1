@@ -27,6 +27,11 @@ $script:CurrentThemePalette = $null
 $script:FormControls = $null
 
 $script:KillRequested = $false
+# Used as a hack to programatically set the theme dropdown
+# without triggering a change event (which would then trigger
+# a user override which will theme updates from group/category
+# changes impossible)
+$script:SuppressThemeDropdownEvent = $false
 
 # theme name user selects from the theme dropdown (if they make a selection)
 # need to prevent group switching JSON from overriding their selection
@@ -113,6 +118,7 @@ $script:OutputTextBox = $null               # Reference to UI control
 $script:StatusLabel = $null                 # Reference to UI control
 $script:JobButtons = @{}                    # Dictionary mapping job name to button control
 $script:KillButton = $null                  # Reference to Kill button
+$script:ThemeCombo = $null                  # Theme dropdown
 $script:MainForm = $null                    # Reference to main window
 
 # =============================================================================
@@ -1059,6 +1065,44 @@ function Initialize-ListBox {
 
 <#
 .SYNOPSIS
+    Programmatically sets a ComboBox's SelectedItem without triggering its event handler.
+
+.DESCRIPTION
+    Uses a global suppression flag ($script:SuppressThemeDropdownEvent) to temporarily
+    prevent the SelectedIndexChanged event from firing while the value is changed.
+    The event handler should check this flag at its beginning and return if true.
+
+.PARAMETER Dropdown
+    The ComboBox control whose selection will be changed.
+
+.PARAMETER NewValue
+    The value to set as the SelectedItem. Must be an item already present in the
+    Dropdown's Items collection.
+
+.EXAMPLE
+    Set-Dropdown -Dropdown $themeCombo -NewValue "dark"
+
+.NOTES
+    Requires $script:SuppressThemeDropdownEvent to be defined (initialized to $false).
+    The event handler must include:
+        if ($script:SuppressThemeDropdownEvent) { return }
+
+    This pattern prevents recursive or unintended event firing during programmatic updates.
+#>
+function Set-Dropdown {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Windows.Forms.ComboBox]$Dropdown,
+        [Parameter(Mandatory = $true)]
+        [String]$NewValue
+    )
+    $script:SuppressThemeDropdownEvent = $true
+    $Dropdown.SelectedItem = $NewValue
+    $script:SuppressThemeDropdownEvent = $false
+}
+
+<#
+.SYNOPSIS
     Creates and configures the toolbar with theme selector and kill button.
 .DESCRIPTION
     Returns a TableLayoutPanel configured with three columns:
@@ -1103,8 +1147,17 @@ function Initialize-Toolbar {
         $null = $themeCombo.Items.Add($themeName)
     }
     $themeCombo.SelectedItem = $script:CurrentThemeName
+    $script:ThemeCombo = $themeCombo
 
     $themeCombo.Add_SelectedIndexChanged({
+        # global boolean to commnicate that this change
+        # event was triggered programmatically to ONLY
+        # change the displayed option (not via
+        # user selection)
+        if ($script:SuppressThemeDropdownEvent) {
+            return
+        }
+
         $selected = $this.SelectedItem.ToString()
         Apply-Theme -themeName $selected
         # set user selected theme so group switching won't override it
@@ -1412,6 +1465,13 @@ function Apply-Theme {
 
     # Set the theme globally first
     Set-Theme -themeName $ThemeName
+
+    # Update dropdown
+    # Note: You must use Set-Dropdown function to set the dropdown state
+    # else it will trigger a new Selection event which will reset
+    # $script:UserSelectedTheme boolean and prevent any Group / Category
+    # theme changes
+    Set-Dropdown -Dropdown $script:ThemeCombo -NewValue $ThemeName
 
     # Button colors
     $buttonColor = Get-ThemeColor -PropertyName "button"
