@@ -301,14 +301,210 @@ PowerShell Version: $psVersion
     Write-OutputWithTimestamp "Log written to: $logPath"
 }
 
-function Invoke-JobWithTimeout {
+<#
+.SYNOPSIS
+    Creates a Process object for a blocking (normal) job.
+
+.DESCRIPTION
+    Parses the command string into executable and arguments.
+    Configures ProcessStartInfo with:
+    - Working directory (assumes $workingDir is in scope)
+    - stdout/stderr redirection enabled
+    - No console window
+    - UTF8 encoding for output streams
+
+.PARAMETER Job
+    The job object with .command property.
+
+.NOTES
+    The first word of .command must be an executable in PATH or a full path.
+#>
+function Get-JobProcessBlocking {
+    param(
+        [PSObject]$Job,
+        [string]$WorkingDirectory
+    )
+
+    # Parse command into executable and arguments
+    # Simple split on first space - handles quoted paths poorly but sufficient for cmd/powershell patterns
+    $parts = $Job.command -split ' ', 2
+    $executable = $parts[0]
+    $arguments = if ($parts.Count -gt 1) { $parts[1] } else { "" }
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $executable
+    $psi.Arguments = $arguments
+    $psi.WorkingDirectory = $WorkingDirectory
+    $psi.UseShellExecute = $false           # Required for redirection
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.CreateNoWindow = $true             # No console window popping up
+    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $psi
+
+    return $process
+}
+
+<#
+.SYNOPSIS
+    Creates a Process object for a detached job.
+
+.DESCRIPTION
+    Wraps the user's command in a powershell.exe -Command Start-Process cmd -ArgumentList '/c ...' -WindowStyle Hidden.
+    Working directory is set on the outer powershell.exe process.
+
+.PARAMETER Job
+    The job object with .command and .name properties.
+.PARAMETER WorkingDirectory
+    The resolved working directory for the job. Must be a valid, existing path.
+
+.NOTES
+    The returned process exits almost immediately; the user's command runs independently.
+#>
+function Get-JobProcessDetached {
+    param(
+        [PSObject]$Job,
+        [string]$WorkingDirectory
+    )
+
+    # Arguments to send to Windows cmd
+    $cmdCommand = $Job.command
+
+    # Arguments to send to powershell.exe
+    $powerShellArguments = "-Command Start-Process cmd -ArgumentList '/c $cmdCommand' -WindowStyle Hidden"
+    Write-Host "DEBUG: $powerShellArguments"
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = "powershell.exe"
+    $psi.Arguments = $powerShellArguments
+    $psi.WorkingDirectory = $WorkingDirectory
+    $psi.RedirectStandardOutput = $false
+    $psi.RedirectStandardError = $false
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true             # No console window popping up
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $psi
+
+    return $process
+}
+
+<#
+.SYNOPSIS
+    Returns a configured Process object for a job based on its 'detached' flag.
+
+.DESCRIPTION
+    Dispatches to Get-JobProcessBlocking or Get-JobProcessDetached.
+    The returned Process object is ready to .Start().
+    ProcessStartInfo is fully configured including working directory, redirection,
+    and window behavior.
+
+.PARAMETER Job
+    The job object (PSObject) containing at minimum .command and optionally .detached.
+.PARAMETER WorkingDirectory
+    The resolved working directory for the job. Must be a valid, existing path.
+
+.EXAMPLE
+    $process = Get-JobProcess -Job $Job
+    $process.Start()
+#>
+function Get-JobProcess {
+    param(
+        [PSObject]$Job,
+        [string]$WorkingDirectory
+    )
+
+    if ($Job.ContainsKey('detached') -and $Job.detached -eq $true) {
+        return Get-JobProcessDetached -Job $Job -WorkingDirectory $WorkingDirectory
+    } else {
+        return Get-JobProcessBlocking -Job $Job -WorkingDirectory $WorkingDirectory
+    }
+}
+
+<#
+.SYNOPSIS
+    Determines the timeout (in seconds) for a job.
+
+.DESCRIPTION
+    Priority:
+    1. If job.detached = true → returns 1 (short timeout)
+    2. If job.timeout_seconds is set and non-null → returns that value
+    3. Otherwise → returns script:Settings.default_timeout_seconds
+
+.PARAMETER Job
+    The job object with optional .detached and .timeout_seconds properties.
+.PARAMETER WorkingDirectory
+    The resolved working directory for the job. Must be a valid, existing path.
+
+.EXAMPLE
+    $timeout = Get-JobTimeout -Job $Job
+#>
+function Get-JobTimeout {
+    param([PSObject]$Job)
+
+    if ($Job.ContainsKey('detached') -and $Job.detached -eq $true) {
+        return 10
+    }
+
+    if ($Job.ContainsKey('timeout_seconds')  -and $Job.timeout_seconds) {
+        return $Job.timeout_seconds
+    }
+
+    # fallback to default
+    return $script:Settings.default_timeout_seconds
+}
+
+<#
+.SYNOPSIS
+    Executes a job (blocking or detached) with timeout, logging, and UI feedback.
+
+.DESCRIPTION
+    This is the main entry point for running any job from the launcher.
+    Steps performed:
+    1. Determine timeout via Get-JobTimeout
+    2. Resolve working directory
+    3. Create Process object via Get-JobProcess
+    4. Start the process
+    5. Wait for exit (with polling, DoEvents, kill-request handling)
+    6. Capture output (if streams exist)
+    7. Write log file
+    8. Update UI status (success/failure/timeout)
+
+    For detached jobs, the timeout is very short (1 second) and output capture
+    is disabled (stdout/stderr streams are $null). The user's command continues
+    running independently after the process exits.
+
+.PARAMETER Job
+    The job object with .name, .command, and optional .detached, .timeout_seconds,
+    .working_directory properties.
+
+.PARAMETER JobButton
+    The Button control associated with this job (used for visual feedback).
+
+.EXAMPLE
+    Invoke-Job -Job $selectedJob -JobButton $jobButton
+
+.NOTES
+    Sets and clears $script:CurrentRunningJob and $script:KillRequested.
+    Uses Write-OutputWithTimestamp for real-time UI updates.
+    Reuses Write-LogFile for persistent logging.
+#>
+function Invoke-Job {
     param([PSObject]$Job, [System.Windows.Forms.Button]$JobButton)
 
     $UI_Color_StatusError = Get-ThemeColor -PropertyName "status_error"
     $UI_Color_StatusOk = Get-ThemeColor -PropertyName "status_ok"
 
+    # == Determine Timeout ==
+
+    $timeoutSeconds = Get-JobTimeout -Job $Job
+
     # === Validate working directory ===
-    $workingDir = if ($Job.working_directory) {
+
+    $workingDir = if ($Job.ContainsKey('working_directory') -and $Job.working_directory) {
         $Job.working_directory
     } elseif ($script:Settings.default_working_directory) {
         $script:Settings.default_working_directory
@@ -324,40 +520,22 @@ function Invoke-JobWithTimeout {
 
         # Write minimal log
         Write-LogFile -JobName $Job.name -CommandLine $Job.command -WorkingDirectory $workingDir `
-                      -TimeoutSeconds $Job.timeout_seconds -ExitCode -1 -Output $errorMsg `
+                      -TimeoutSeconds $timeoutSeconds -ExitCode -1 -Output $errorMsg `
                       -TerminationReason "DirectoryNotFound"
         return $false
     }
 
-    # === Prepare process startup info ===
-    # Parse command into executable and arguments
-    # Simple split on first space - handles quoted paths poorly but sufficient for cmd/powershell patterns
-    $parts = $Job.command -split ' ', 2
-    $executable = $parts[0]
-    $arguments = if ($parts.Count -gt 1) { $parts[1] } else { "" }
+    # === Prepare proces ===
 
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $executable
-    $psi.Arguments = $arguments
-    $psi.WorkingDirectory = $workingDir
-    $psi.UseShellExecute = $false           # Required for redirection
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    $psi.CreateNoWindow = $true             # No console window popping up
-    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
-    $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+    $process = Get-JobProcess -Job $Job -WorkingDirectory $workingDir
 
     # === Start process ===
-    $process = New-Object System.Diagnostics.Process
-    $process.StartInfo = $psi
 
     Write-OutputWithTimestamp "Starting job: $($Job.name)"
     if ($ShowFullCommandInOutput) {
         Write-OutputWithTimestamp "Command: $($Job.command)"
         Write-OutputWithTimestamp "Working directory: $workingDir"
-        if ($Job.timeout_seconds) {
-            Write-OutputWithTimestamp "Timeout: $($Job.timeout_seconds) seconds"
-        }
+        Write-OutputWithTimestamp "Timeout: $($timeoutSeconds) seconds"
     }
 
     try {
@@ -370,9 +548,6 @@ function Invoke-JobWithTimeout {
             Button = $JobButton
             StartTime = Get-Date
         }
-
-        # Determine timeout (job-specific or default)
-        $timeoutSeconds = if ($Job.timeout_seconds) { $Job.timeout_seconds } else { $script:Settings.default_timeout_seconds }
 
         # === Wait for exit with timeout polling ===
         $timedOut = $false
@@ -416,8 +591,18 @@ function Invoke-JobWithTimeout {
         }
 
         # === Capture output (must happen after process exits) ===
-        $stdout = $process.StandardOutput.ReadToEnd()
-        $stderr = $process.StandardError.ReadToEnd()
+
+        $stdout = ""
+        $stderr = ""
+
+        # $process.StandardOutput / Err might be null for detached jobs
+        if ($process.StandardOutput -ne $null) {
+            $stdout = $process.StandardOutput.ReadToEnd()
+        }
+        if ($process.StandardError -ne $null) {
+            $stderr = $process.StandardError.ReadToEnd()
+        }
+
         $combinedOutput = if ($stderr) { "$stdout`r`n$stderr" } else { $stdout }
 
         $exitCode = if ($timedOut) { -1 } elseif ($process.HasExited) { $process.ExitCode } else { -2 }
@@ -462,7 +647,7 @@ function Invoke-JobWithTimeout {
         }
 
         Write-LogFile -JobName $Job.name -CommandLine $Job.command -WorkingDirectory $workingDir `
-                      -TimeoutSeconds $Job.timeout_seconds -ExitCode -1 -Output $errorMsg `
+                      -TimeoutSeconds $timeoutSeconds -ExitCode -1 -Output $errorMsg `
                       -TerminationReason "Exception"
         return $false
     }
@@ -543,7 +728,7 @@ function Invoke-JobAndManageUI {
     }
 
     # Run the job
-    $success = Invoke-JobWithTimeout -Job $Job -JobButton $JobButton
+    $success = Invoke-Job -Job $Job -JobButton $JobButton
 
     # Flash button if configured
     if ($FlashButtonOnComplete) {
@@ -1400,7 +1585,7 @@ function UpdateButtonsForGroup {
             }
 
             # Run the job
-            $success = Invoke-JobWithTimeout -Job $jobToRun -JobButton $buttonRef
+            $success = Invoke-Job -Job $jobToRun -JobButton $buttonRef
 
             # Flash button if configured
             if ($FlashButtonOnComplete) {
