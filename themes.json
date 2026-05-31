@@ -358,5 +358,45 @@
     "status_ok": "#4CAF50",
     "status_error": "#E57373",
     "status_running": "#FFB347"
-  }
+  },
+"warm_pastels": {
+    "form_background": "#FFD6D6",
+    "toolbar_background": "#F5D742",
+    "toolbar_text": "#3A2A10",
+    "list_background": "#FFE0E0",
+    "list_text": "#4A3A2A",
+    "panel_background": "#FFD0D0",
+    "button": "#A8D0E6",
+    "button_hover": "#C0E4F2",
+    "button_text": "#3A4A6A",
+    "button_running": "#FFB347",
+    "kill_button": "#A8D0E6",
+    "kill_button_text": "#3A4A6A",
+    "output_background": "#FFF5E8",
+    "output_text": "#4A3A2A",
+    "status_text": "#4A3A2A",
+    "status_ok": "#6B9E6B",
+    "status_error": "#E08060",
+    "status_running": "#FFB347"
+},
+"primary_pastels": {
+    "form_background": "#FFE5E5",
+    "toolbar_background": "#FFF0CC",
+    "toolbar_text": "#5A4A3A",
+    "list_background": "#FFF5F5",
+    "list_text": "#5A4A3A",
+    "panel_background": "#FFEBEB",
+    "button": "#A8D0E6",
+    "button_hover": "#C0E4F2",
+    "button_text": "#3A4A6A",
+    "button_running": "#F4A261",
+    "kill_button": "#A8D0E6",
+    "kill_button_text": "#3A4A6A",
+    "output_background": "#FAFAF0",
+    "output_text": "#4A4A4A",
+    "status_text": "#5A4A3A",
+    "status_ok": "#7DB87D",
+    "status_error": "#E88A7A",
+    "status_running": "#F4A261"
+}
 }
