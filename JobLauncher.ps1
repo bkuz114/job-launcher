@@ -812,7 +812,10 @@ function Get-JobProcess {
     $timeout = Get-JobTimeout -Job $Job
 #>
 function Get-JobTimeout {
-    param([PSObject]$Job)
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSObject]$Job
+    )
 
     if ($Job.ContainsKey('detached') -and $Job.detached -eq $true) {
         return 10
