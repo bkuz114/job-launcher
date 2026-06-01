@@ -99,6 +99,60 @@ Each log contains:
 
 Logs older than 30 days are automatically deleted. Retention period is configurable at the top of `JobLauncher.ps1`.
 
+## Detached Jobs
+
+Detached jobs run independently in the background. The launcher does not wait for them to complete – it starts the process and immediately returns control to the UI. This is ideal for GUI applications, long‑running background tasks, or any command you do not need to monitor or wait for.
+
+### Usage
+
+Add `"detached": true` to any job definition. Timeouts are ignored for detached jobs (the launcher exits the wrapper process after ~1 second).
+
+### Command Syntax Rules
+
+The `command` field must follow these rules due to the nested wrapper (`powershell.exe → Start-Process cmd → cmd.exe → your command`):
+
+| Scenario | Working Pattern | Example |
+|----------|----------------|---------|
+| Simple command (no spaces, no quotes) | Write directly | `"command": "notepad.exe"` |
+| File path with spaces | Use escaped double quotes around the path | `"command": "notepad.exe \"C:\\Test Folder\\file.txt\""` |
+| Nested quotes (e.g., PowerShell `-Command`) | Use escaped double quotes for the outer string and double‑double quotes inside | `"command": "powershell.exe -Command \"Write-Host \"Hello\"\""` |
+
+> **Note:** Single quotes around paths or command arguments will fail. Always use the escaped double‑quote patterns shown above.
+
+### Limitations
+
+- **Kill button has no effect** – Detached processes are not tracked after launch.
+- **Logged PID** – The PID shown in the main log belongs to the short‑lived wrapper process, not your command.
+- **Output redirection** – stdout/stderr are written to a separate child log file (`*-child.log`). The main job log only contains the launch header.
+- **Complex quoting** – The patterns shown above are tested and work; deviations may fail.
+
+### Example
+
+Here is an example of launching argos translator, which could require starting a virtual env and then keeping a continuous console session:
+
+```json
+{
+  "name": "Detached - venv",
+  "command": "argos\\Scripts\\activate && python argos\\Scripts\\argos-translate-gui",
+  "detached": true,
+  "working_directory": "C:\\Users\\Ivan\\virtual-envs",
+  "timeout_seconds": null
+},
+
+```
+
+This launches a process in the background which starts the virtual env and starts the argos-translate-gui app, then returns control to the launcher immediately. argso-translate-gui runs independently, and any errors or output are written to the child log file.
+
+### When to Use Detached vs. Blocking
+
+| Use Case | Recommended Job Type |
+|----------|---------------------|
+| CLI tool that runs and exits | Blocking |
+| Script that you need to monitor | Blocking |
+| GUI application | Detached |
+| Long‑running background task | Detached |
+| Command with complex quoting that fails in detached mode | Blocking (or wrap in a `.ps1` script) |
+
 ## Themes
 
 The launcher supports custom color themes. Themes control the appearance of the main window, panels, buttons, output area, and status text. Themes can be switched via a dropdown menu in the toolbar, or can be set via `launcher_config.json`.
