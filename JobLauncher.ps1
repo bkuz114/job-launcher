@@ -1129,41 +1129,6 @@ function Update-ButtonStates {
     }
 }
 
-function Invoke-JobAndManageUI {
-    param([hashtable]$Job, [System.Windows.Forms.Button]$JobButton)
-
-    $UI_Color_StatusError = Get-ThemeColor -PropertyName "status_error"
-    $UI_Color_StatusOk = Get-ThemeColor -PropertyName "status_ok"
-    $UI_Color_Background = Get-ThemeColor -PropertyName "form_background" 
-
-    # Disable all job buttons
-    Write-Host "DEBUG: Invoke-JobAndManageUI - About to disable job buttons (kill button should enable)"
-    Update-ButtonStates -Running $true
-    Write-Host "DEBUG: Invoke-JobAndManageUI - After Update-ButtonStates call"
-
-    if ($UI_ClearOutputBeforeEachJob) {
-        $script:OutputTextBox.Clear()
-    }
-
-    # Run the job
-    $success = Invoke-Job -Job $Job -JobButton $JobButton
-
-    # Flash button if configured
-    if ($FlashButtonOnComplete) {
-        $originalColor = $JobButton.BackColor
-        $flashColor = if ($success) { $UI_Color_StatusOk } else { $UI_Color_StatusError }
-        $JobButton.BackColor = $flashColor
-        $JobButton.Refresh()
-        Start-Sleep -Milliseconds $FlashDurationMs
-        $JobButton.BackColor = $originalColor
-        $JobButton.Refresh()
-    }
-
-    # Re-enable all job buttons
-    Update-ButtonStates -Running $false
-    Update-Status "Ready" $UI_Color_Background
-}
-
 function Stop-CurrentJob {
     $UI_Color_Background = Get-ThemeColor -PropertyName "form_background" 
 
