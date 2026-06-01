@@ -896,7 +896,7 @@ function Invoke-Job {
         Update-Status "Failed: Directory not found" $UI_Color_StatusError
 
         # Write minimal log
-        Finalize-JobLog -Path $logFile -TerminationReason "Working Directory Failure" -GeneralOutput $errorMsg
+        Finalize-JobLog -Path $logFile -ExitCode -1 -TerminationReason "Working Directory Failure" -GeneralOutput $errorMsg
         return $false
     }
 
