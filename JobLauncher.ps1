@@ -828,6 +828,51 @@ function Get-JobTimeout {
 
 <#
 .SYNOPSIS
+    Determines the working directory for a job based on priority order.
+
+.DESCRIPTION
+    Returns the working directory for a job by checking the following in order:
+    1. Job's 'working_directory' property (if present and non-empty)
+    2. Global script setting 'default_working_directory'
+    3. Fallback to the script's directory where this function is defined
+
+.PARAMETER Job
+    The job object (hashtable) containing job properties.
+    Must support ContainsKey method and dot notation for property access.
+
+.EXAMPLE
+    $workingDir = Get-JobWorkingDirectory -Job $jobObject
+
+.NOTES
+    The function does not validate whether the returned directory exists.
+    Caller is responsible for existence checking.
+
+    Depends on global variable $script:Settings being defined with
+    a 'default_working_directory' property.
+
+    The fallback path uses $PSScriptRoot which represents the directory
+    of the script containing this function.
+#>
+function Get-JobWorkingDirectory {
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSObject]$Job
+    )
+
+    if ($Job.ContainsKey('working_directory') -and $Job.working_directory) {
+        return $Job.working_directory
+    }
+
+    if ($script:Settings.default_working_directory) {
+        return $script:Settings.default_working_directory
+    }
+
+    # Fallback to the script's directory
+    return $PSScriptRoot
+}
+
+<#
+.SYNOPSIS
     Executes a job (blocking or detached) with timeout, logging, and UI feedback.
 
 .DESCRIPTION
@@ -875,14 +920,7 @@ function Invoke-Job {
 
     # === Get working directory ===
 
-    $workingDir = if ($Job.ContainsKey('working_directory') -and $Job.working_directory) {
-        $Job.working_directory
-    } elseif ($script:Settings.default_working_directory) {
-        $script:Settings.default_working_directory
-    } else {
-        # Fallback to the script's directory
-        Split-Path -Path $script:MyInvocation.MyCommand.Path -Parent
-    }
+    $workingDir = Get-JobWorkingDirectory -Job $Job
 
     # === Initialize logfile with job header ==
 
