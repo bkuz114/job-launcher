@@ -866,6 +866,8 @@ function Invoke-Job {
 
     $UI_Color_StatusError = Get-ThemeColor -PropertyName "status_error"
     $UI_Color_StatusOk = Get-ThemeColor -PropertyName "status_ok"
+    $jobName = Get-JobProperty -Job $Job -Property "name" -ThrowError $true # throw error if no job name found
+    $jobCommand = Get-JobProperty -Job $Job -Property "command" -ThrowError $true # throw error if can't find command
 
     # == Determine Timeout ==
 
@@ -904,9 +906,9 @@ function Invoke-Job {
 
     # === Start process ===
 
-    Write-OutputWithTimestamp "Starting job: $($Job.name)"
+    Write-OutputWithTimestamp "Starting job: $jobName"
     if ($ShowFullCommandInOutput) {
-        Write-OutputWithTimestamp "Command: $($Job.command)"
+        Write-OutputWithTimestamp "Command: $jobCommand"
         Write-OutputWithTimestamp "Working directory: $workingDir"
         Write-OutputWithTimestamp "Timeout: $($timeoutSeconds) seconds"
     }
@@ -997,15 +999,15 @@ function Invoke-Job {
 
         # Report success/failure
         if ($timedOut) {
-            Update-Status "TIMEOUT: $($Job.name)" $UI_Color_StatusError
+            Update-Status "TIMEOUT: $jobName" $UI_Color_StatusError
             return $false
         } elseif ($exitCode -eq 0) {
             Write-OutputWithTimestamp "Job completed successfully (exit code 0)"
-            Update-Status "Success: $($Job.name)" $UI_Color_StatusOk
+            Update-Status "Success: $jobName" $UI_Color_StatusOk
             return $true
         } else {
             Write-OutputWithTimestamp "Job failed with exit code: $exitCode" -IsError $true
-            Update-Status "Failed: $($Job.name) (exit $exitCode)" $UI_Color_StatusError
+            Update-Status "Failed: $jobName (exit $exitCode)" $UI_Color_StatusError
             return $false
         }
     }
@@ -1013,7 +1015,7 @@ function Invoke-Job {
         $script:KillRequested = $false
         $errorMsg = "Exception during job execution: $($_.Exception.Message)"
         Write-OutputWithTimestamp $errorMsg -IsError $true
-        Update-Status "Error: $($Job.name)" $UI_Color_StatusError
+        Update-Status "Error: $jobName" $UI_Color_StatusError
 
         # Attempt to kill if process is still running
         if ($process -and (-not $process.HasExited)) {
