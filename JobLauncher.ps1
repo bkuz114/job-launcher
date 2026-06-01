@@ -123,6 +123,222 @@ $script:ThemeCombo = $null                  # Theme dropdown
 $script:MainForm = $null                    # Reference to main window
 
 # =============================================================================
+# JSON LOADING
+# =============================================================================
+
+<#
+.SYNOPSIS
+    Loads and validates a hierarchical configuration with categories, groups, and jobs.
+
+.DESCRIPTION
+    Processes the JSON configuration when it contains a "categories" array.
+    Each category contains a "groups" array, and each group contains a "jobs" array.
+
+    Builds $script:ListItems with two item types:
+    - Type "category" for category headers (non-selectable, visual separation)
+    - Type "group" for selectable groups (stores original group object in .Node)
+
+    Throws terminating errors for any missing required fields or empty collections.
+
+.PARAMETER Config
+    The PSCustomObject from ConvertFrom-Json containing the full configuration.
+
+.EXAMPLE
+    Load-HierarchicalConfig -Config $config
+
+.NOTES
+    Sets $script:ListItems. Caller is responsible for setting $script:HasCategories = $true.
+    Does NOT set $script:Settings – that is handled separately in Load-Configuration.
+#>
+function Load-HierarchicalConfig {
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSObject]$Config
+    )
+
+    if (-not $config.categories) { throw "Missing 'categories' array" }
+    if ($config.categories.Count -eq 0) { throw "No categories defined" }
+
+    $script:ListItems = @()
+
+    foreach ($category in $config.categories) {
+        # Validate category has name
+        if ([string]::IsNullOrWhiteSpace($category.name)) { throw "Category missing 'name' field" }
+        if (-not $category.groups) { throw "Category '$($category.name)' missing 'groups' array" }
+
+        # Add divider for category
+        $categoryItem = [PSCustomObject]@{
+            Type = "category"
+            Label = $category.name
+            Node = $category
+        }
+        $categoryItem | Add-Member -MemberType ScriptMethod -Name ToString -Value { $this.Label } -Force
+        $script:ListItems += $categoryItem
+
+        # Validate each group has name and jobs
+        foreach ($group in $category.groups) {
+            if ([string]::IsNullOrWhiteSpace($group.name)) { throw "Group missing 'name' in category '$($category.name)'" }
+            if (-not $group.jobs) { throw "Group '$($group.name)' missing 'jobs' array" }
+            if ($group.jobs.Count -eq 0) { throw "Group '$($group.name)' has no jobs defined" }
+
+            # Validate each job in the group
+            foreach ($job in $group.jobs) {
+                if ([string]::IsNullOrWhiteSpace($job.name)) { throw "Job missing 'name' field in group '$($group.name)'" }
+                if ([string]::IsNullOrWhiteSpace($job.command)) { throw "Job '$($job.name)' missing 'command' field" }
+            }
+
+            # add group to global ListItems
+            $groupItem = [PSCustomObject]@{
+                Type = "group"
+                Label = $group.name
+                Node = $group
+                Parent = $category  # add parent category to retrieve theme from
+            }
+            $groupItem | Add-Member -MemberType ScriptMethod -Name ToString -Value { $this.Label } -Force
+            $script:ListItems += $groupItem
+        }
+    }
+}
+
+<#
+.SYNOPSIS
+    Loads and validates a flat configuration with groups and jobs (no categories).
+
+.DESCRIPTION
+    Processes the JSON configuration when it contains a "groups" array (and no "categories").
+    Validates each group has a name, a non-empty jobs array, and each job has a name and command.
+
+    Stores the validated groups in $script:ListItems for use by Populate-FlatList.
+
+.PARAMETER Config
+    The PSCustomObject from ConvertFrom-Json containing the full configuration.
+
+.EXAMPLE
+    Load-FlatConfig -Config $config
+
+.NOTES
+    Sets $script:ListItems. Caller is responsible for setting $script:HasCategories = $false.
+    Does NOT set $script:Settings – that is handled separately in Load-Configuration.
+#>
+function Load-FlatConfig {
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSObject]$Config
+    )
+
+    if (-not $config.groups) { throw "Missing 'groups' array" }
+    if ($config.groups.Count -eq 0) { throw "No groups defined in configuration" }
+
+    $script:ListItems = @()
+
+    # Validate each group has name and jobs
+    foreach ($group in $config.groups) {
+        if ([string]::IsNullOrWhiteSpace($group.name)) { throw "Group missing 'name' field" }
+        if (-not $group.jobs) { throw "Group '$($group.name)' missing 'jobs' array" }
+        if ($group.jobs.Count -eq 0) { throw "Group '$($group.name)' has no jobs defined" }
+
+        # Validate each job in the group
+        foreach ($job in $group.jobs) {
+            if ([string]::IsNullOrWhiteSpace($job.name)) { throw "Job missing 'name' field in group '$($group.name)'" }
+            if ([string]::IsNullOrWhiteSpace($job.command)) { throw "Job '$($job.name)' missing 'command' field" }
+        }
+
+        # add entry with custom ToString function
+        # (will be needed for when adding to ListBox
+        # so it will know what to draw without having
+        # to attach some complicated Add_Draw event)
+        $groupItem = [PSCustomObject]@{
+            Type = "group"
+            Label = $group.name
+            Node = $group
+        }
+        # DO NOT REMOVE THIS. It's what allows you to add these items to $script:FormControls.ListBox
+        # and the system will know what to "draw", without having to add a Draw event which screws up
+        # width. And you NEED to add the entire group object (Rather than just the name) into the ListBox
+        # so that the ListBox data structure will be uniform across both hierarchical and flat case
+        # (instead of strings in one, and objects in another)
+        $groupItem | Add-Member -MemberType ScriptMethod -Name ToString -Value { $this.Label } -Force
+        $script:ListItems += $groupItem
+    }
+}
+
+<#
+.SYNOPSIS
+    Loads and validates the launcher configuration from a JSON file.
+
+.DESCRIPTION
+    Reads launcher_config.json from the script directory, parses it, and validates
+    the required structure. Determines whether the configuration uses a hierarchical
+    structure (categories containing groups) or a flat structure (groups only).
+
+    Dispatches to either Load-HierarchicalConfig or Load-FlatConfig for
+    detailed validation and data loading. Stores the settings section globally.
+
+.PARAMETER ConfigPath
+    Full path to the launcher_config.json file.
+
+.EXAMPLE
+    $success = Load-Configuration -ConfigPath "C:\JobLauncher\launcher_config.json"
+
+.NOTES
+    Returns $true on success, $false on failure (with error message displayed).
+
+    On success, sets:
+    - $script:Settings from config.settings
+    - $script:HasCategories = $true (if categories used) or $false (if groups used)
+    - $script:ListItems
+
+    On failure, shows a MessageBox error and returns $false.
+    Does NOT exit the script – caller should handle the failure.
+#>
+function Load-Configuration {
+    param([string]$ConfigPath)
+
+    if (-not (Test-Path -Path $ConfigPath)) {
+        [System.Windows.Forms.MessageBox]::Show(
+            "Configuration file not found: $ConfigPath`n`nPlease ensure launcher_config.json exists in the script directory.",
+            "Configuration Error",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        )
+        return $false
+    }
+
+    try {
+        $jsonContent = Get-Content -Path $ConfigPath -Raw -Encoding UTF8
+        $config = $jsonContent | ConvertFrom-Json
+
+        # Validate required structure (nested format)
+        if (-not $config.settings) { throw "Missing 'settings' section" }
+
+        if ($config.PSObject.Properties['categories']) {
+            # JSON has high level "categories" field -- hierarchical structure
+            Load-HierarchicalConfig -Config $config
+            $script:HasCategories = $true
+        } elseif ($config.PSObject.Properties['groups']) {
+            # JSON has high level "groups" field -- flat structure
+            Load-FlatConfig -Config $config
+            $script:HasCategories = $false
+        } else {
+            throw "JSON must have either 'categories' or 'groups' array"
+        }
+
+        # Store globally
+        $script:Settings = $config.settings
+        return $true
+    }
+    catch {
+        [System.Windows.Forms.MessageBox]::Show(
+            "Failed to parse configuration file: $ConfigPath`n`nError: $($_.Exception.Message)",
+            "Configuration Error",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        )
+        return $false
+    }
+}
+
+# =============================================================================
 # LOGGING FUNCTIONS
 # =============================================================================
 
@@ -544,8 +760,31 @@ END OF LOG
     $footer | Out-File -FilePath $Path -Encoding UTF8 -Append
 }
 
+function Write-OutputWithTimestamp {
+    param([string]$Text, [bool]$IsError = $false)
+
+    $timestamp = if ($ShowTimestampsInOutput) { "[$(Get-Date -Format 'HH:mm:ss')] " } else { "" }
+    $prefix = if ($IsError) { "ERROR: " } else { "" }
+    $line = $timestamp + $prefix + $Text
+
+    # Append to output textbox (thread-safe via Control.Invoke if needed, but we're on UI thread)
+    $script:OutputTextBox.AppendText($line + "`r`n")
+
+    # Auto-scroll to bottom
+    $script:OutputTextBox.SelectionStart = $script:OutputTextBox.TextLength
+    $script:OutputTextBox.ScrollToCaret()
+}
+
+function Update-Status {
+    param([string]$Text, [System.Drawing.Color]$Color)
+
+    $script:StatusLabel.Text = $Text
+    $script:StatusLabel.ForeColor = $Color
+    # No Refresh needed - ToolStripStatusLabel updates automatically
+}
+
 # =============================================================================
-# HELPER FUNCTIONS
+# JOB SPECIFIC FUNCTIONS
 # =============================================================================
 
 <#
@@ -595,71 +834,6 @@ function Get-JobProperty {
     }
 
     return $Default
-}
-
-<#
-.SYNOPSIS
-    Converts a hexadecimal color string to a System.Drawing.Color object.
-
-.DESCRIPTION
-    Takes a hex color string in formats "#RRGGBB" or "RRGGBB" and returns
-    the corresponding Drawing.Color object. Returns $null if the input
-    is invalid or empty.
-
-.PARAMETER HexColor
-    Hexadecimal color string. Accepts "#RRGGBB" or "RRGGBB" format.
-    Example values: "#FFC107", "28A745", "#1E1E1E"
-
-.EXAMPLE
-    $color = Convert-HexColorToDrawingColor -HexColor "#3C6E71"
-
-.EXAMPLE
-    $color = Convert-HexColorToDrawingColor "DC3545"
-
-.NOTES
-    Returns $null for:
-    - Empty or null input
-    - Strings not exactly 6 hex digits (after optional #)
-    - Invalid hex characters
-
-    Does NOT throw exceptions. Callers should handle $null returns appropriately.
-#>
-function Convert-HexColorToDrawingColor {
-    param([string]$HexColor)
-
-    if (-not $HexColor) { return $null }
-
-    $hex = $HexColor.TrimStart('#')
-    if ($hex.Length -eq 6) {
-        $r = [Convert]::ToInt32($hex.Substring(0,2), 16)
-        $g = [Convert]::ToInt32($hex.Substring(2,2), 16)
-        $b = [Convert]::ToInt32($hex.Substring(4,2), 16)
-        return [System.Drawing.Color]::FromArgb($r, $g, $b)
-    }
-    return $null
-}
-
-function Write-OutputWithTimestamp {
-    param([string]$Text, [bool]$IsError = $false)
-
-    $timestamp = if ($ShowTimestampsInOutput) { "[$(Get-Date -Format 'HH:mm:ss')] " } else { "" }
-    $prefix = if ($IsError) { "ERROR: " } else { "" }
-    $line = $timestamp + $prefix + $Text
-
-    # Append to output textbox (thread-safe via Control.Invoke if needed, but we're on UI thread)
-    $script:OutputTextBox.AppendText($line + "`r`n")
-
-    # Auto-scroll to bottom
-    $script:OutputTextBox.SelectionStart = $script:OutputTextBox.TextLength
-    $script:OutputTextBox.ScrollToCaret()
-}
-
-function Update-Status {
-    param([string]$Text, [System.Drawing.Color]$Color)
-
-    $script:StatusLabel.Text = $Text
-    $script:StatusLabel.ForeColor = $Color
-    # No Refresh needed - ToolStripStatusLabel updates automatically
 }
 
 <#
@@ -1076,59 +1250,6 @@ function Invoke-Job {
     }
 }
 
-<#
-.SYNOPSIS
-    Updates the state and appearance of job buttons and kill button based on whether a job is running.
-
-.DESCRIPTION
-    When a job is running ($Running = $true):
-        - All job buttons are disabled (preventing concurrent jobs)
-        - Job buttons retain their normal background color
-        - Kill button is enabled (allowing user to kill the running job)
-
-    When no job is running ($Running = $false):
-        - All job buttons are enabled (ready to start new jobs)
-        - The button that was running (if any) gets a special "running" background color as a visual indicator
-        - Kill button is disabled (nothing to kill)
-
-.PARAMETER Running
-    $true when a job is currently running, $false when no job is running.
-    This parameter determines the state transition for all buttons.
-
-.NOTES
-    Depends on $script:JobButtons (hashtable of job name to button control)
-    Depends on $script:CurrentRunningJob (contains 'Button' key when a job is running)
-    Depends on $script:KillButton (the kill button control)
-    Uses Get-ThemeColor for color values "button" and "button_running"
-#> 
-function Update-ButtonStates {
-    param([bool]$Running)
-    Write-Host "DEBUG: Update-ButtonStates $Running"
-
-    $UI_Color_Button = Get-ThemeColor -PropertyName "button"
-    $UI_Color_ButtonRunning = Get-ThemeColor -PropertyName "button_running"
-
-    foreach ($btn in $script:JobButtons.Values) {
-        # disable job buttons if job running
-        $btn.Enabled = (-not $Running)
-        if (-not $Running) {
-            # Restore original color for all buttons
-            $btn.BackColor = $UI_Color_Button
-        } elseif ($Running -and $script:CurrentRunningJob -and $script:CurrentRunningJob.ContainsKey('Button')) {
-            # Only change color for the currently running job's button
-            $runningButton = $script:CurrentRunningJob['Button']
-            if ($btn -eq $runningButton) {
-                $btn.BackColor = $UI_Color_ButtonRunning
-            }
-        }
-    }
-
-    if ($script:KillButton) {
-        # KillButtn should be opposite of job buttons: enable when jobs running, gray out otherwise
-        Update-KillButton -KillButton $script:KillButton -Enable $Running
-    }
-}
-
 function Stop-CurrentJob {
     $UI_Color_Background = Get-ThemeColor -PropertyName "form_background" 
 
@@ -1213,6 +1334,10 @@ function Stop-CurrentJob {
     }
 }
 
+# =============================================================================
+# THEMES
+# =============================================================================
+
 <#
 .SYNOPSIS
     Loads user-defined themes from themes.json, falls back to built-in default.
@@ -1259,737 +1384,6 @@ function Load-Themes {
     }
     catch {
         Write-Host "Warning: Failed to load themes.json - $($_.Exception.Message)"
-    }
-}
-
-<#
-.SYNOPSIS
-    Loads and validates a hierarchical configuration with categories, groups, and jobs.
-
-.DESCRIPTION
-    Processes the JSON configuration when it contains a "categories" array.
-    Each category contains a "groups" array, and each group contains a "jobs" array.
-
-    Builds $script:ListItems with two item types:
-    - Type "category" for category headers (non-selectable, visual separation)
-    - Type "group" for selectable groups (stores original group object in .Node)
-
-    Throws terminating errors for any missing required fields or empty collections.
-
-.PARAMETER Config
-    The PSCustomObject from ConvertFrom-Json containing the full configuration.
-
-.EXAMPLE
-    Load-HierarchicalConfig -Config $config
-
-.NOTES
-    Sets $script:ListItems. Caller is responsible for setting $script:HasCategories = $true.
-    Does NOT set $script:Settings – that is handled separately in Load-Configuration.
-#>
-function Load-HierarchicalConfig {
-    param(
-        [Parameter(Mandatory = $true)]
-        [PSObject]$Config
-    )
-
-    if (-not $config.categories) { throw "Missing 'categories' array" }
-    if ($config.categories.Count -eq 0) { throw "No categories defined" }
-
-    $script:ListItems = @()
-
-    foreach ($category in $config.categories) {
-        # Validate category has name
-        if ([string]::IsNullOrWhiteSpace($category.name)) { throw "Category missing 'name' field" }
-        if (-not $category.groups) { throw "Category '$($category.name)' missing 'groups' array" }
-
-        # Add divider for category
-        $categoryItem = [PSCustomObject]@{
-            Type = "category"
-            Label = $category.name
-            Node = $category
-        }
-        $categoryItem | Add-Member -MemberType ScriptMethod -Name ToString -Value { $this.Label } -Force
-        $script:ListItems += $categoryItem
-
-        # Validate each group has name and jobs
-        foreach ($group in $category.groups) {
-            if ([string]::IsNullOrWhiteSpace($group.name)) { throw "Group missing 'name' in category '$($category.name)'" }
-            if (-not $group.jobs) { throw "Group '$($group.name)' missing 'jobs' array" }
-            if ($group.jobs.Count -eq 0) { throw "Group '$($group.name)' has no jobs defined" }
-
-            # Validate each job in the group
-            foreach ($job in $group.jobs) {
-                if ([string]::IsNullOrWhiteSpace($job.name)) { throw "Job missing 'name' field in group '$($group.name)'" }
-                if ([string]::IsNullOrWhiteSpace($job.command)) { throw "Job '$($job.name)' missing 'command' field" }
-            }
-
-            # add group to global ListItems
-            $groupItem = [PSCustomObject]@{
-                Type = "group"
-                Label = $group.name
-                Node = $group
-                Parent = $category  # add parent category to retrieve theme from
-            }
-            $groupItem | Add-Member -MemberType ScriptMethod -Name ToString -Value { $this.Label } -Force
-            $script:ListItems += $groupItem
-        }
-    }
-}
-
-<#
-.SYNOPSIS
-    Loads and validates a flat configuration with groups and jobs (no categories).
-
-.DESCRIPTION
-    Processes the JSON configuration when it contains a "groups" array (and no "categories").
-    Validates each group has a name, a non-empty jobs array, and each job has a name and command.
-
-    Stores the validated groups in $script:ListItems for use by Populate-FlatList.
-
-.PARAMETER Config
-    The PSCustomObject from ConvertFrom-Json containing the full configuration.
-
-.EXAMPLE
-    Load-FlatConfig -Config $config
-
-.NOTES
-    Sets $script:ListItems. Caller is responsible for setting $script:HasCategories = $false.
-    Does NOT set $script:Settings – that is handled separately in Load-Configuration.
-#>
-function Load-FlatConfig {
-    param(
-        [Parameter(Mandatory = $true)]
-        [PSObject]$Config
-    )
-
-    if (-not $config.groups) { throw "Missing 'groups' array" }
-    if ($config.groups.Count -eq 0) { throw "No groups defined in configuration" }
-
-    $script:ListItems = @()
-
-    # Validate each group has name and jobs
-    foreach ($group in $config.groups) {
-        if ([string]::IsNullOrWhiteSpace($group.name)) { throw "Group missing 'name' field" }
-        if (-not $group.jobs) { throw "Group '$($group.name)' missing 'jobs' array" }
-        if ($group.jobs.Count -eq 0) { throw "Group '$($group.name)' has no jobs defined" }
-
-        # Validate each job in the group
-        foreach ($job in $group.jobs) {
-            if ([string]::IsNullOrWhiteSpace($job.name)) { throw "Job missing 'name' field in group '$($group.name)'" }
-            if ([string]::IsNullOrWhiteSpace($job.command)) { throw "Job '$($job.name)' missing 'command' field" }
-        }
-
-        # add entry with custom ToString function
-        # (will be needed for when adding to ListBox
-        # so it will know what to draw without having
-        # to attach some complicated Add_Draw event)
-        $groupItem = [PSCustomObject]@{
-            Type = "group"
-            Label = $group.name
-            Node = $group
-        }
-        # DO NOT REMOVE THIS. It's what allows you to add these items to $script:FormControls.ListBox
-        # and the system will know what to "draw", without having to add a Draw event which screws up
-        # width. And you NEED to add the entire group object (Rather than just the name) into the ListBox
-        # so that the ListBox data structure will be uniform across both hierarchical and flat case
-        # (instead of strings in one, and objects in another)
-        $groupItem | Add-Member -MemberType ScriptMethod -Name ToString -Value { $this.Label } -Force
-        $script:ListItems += $groupItem
-    }
-}
-
-<#
-.SYNOPSIS
-    Loads and validates the launcher configuration from a JSON file.
-
-.DESCRIPTION
-    Reads launcher_config.json from the script directory, parses it, and validates
-    the required structure. Determines whether the configuration uses a hierarchical
-    structure (categories containing groups) or a flat structure (groups only).
-
-    Dispatches to either Load-HierarchicalConfig or Load-FlatConfig for
-    detailed validation and data loading. Stores the settings section globally.
-
-.PARAMETER ConfigPath
-    Full path to the launcher_config.json file.
-
-.EXAMPLE
-    $success = Load-Configuration -ConfigPath "C:\JobLauncher\launcher_config.json"
-
-.NOTES
-    Returns $true on success, $false on failure (with error message displayed).
-
-    On success, sets:
-    - $script:Settings from config.settings
-    - $script:HasCategories = $true (if categories used) or $false (if groups used)
-    - $script:ListItems
-
-    On failure, shows a MessageBox error and returns $false.
-    Does NOT exit the script – caller should handle the failure.
-#>
-function Load-Configuration {
-    param([string]$ConfigPath)
-
-    if (-not (Test-Path -Path $ConfigPath)) {
-        [System.Windows.Forms.MessageBox]::Show(
-            "Configuration file not found: $ConfigPath`n`nPlease ensure launcher_config.json exists in the script directory.",
-            "Configuration Error",
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Error
-        )
-        return $false
-    }
-
-    try {
-        $jsonContent = Get-Content -Path $ConfigPath -Raw -Encoding UTF8
-        $config = $jsonContent | ConvertFrom-Json
-
-        # Validate required structure (nested format)
-        if (-not $config.settings) { throw "Missing 'settings' section" }
-
-        if ($config.PSObject.Properties['categories']) {
-            # JSON has high level "categories" field -- hierarchical structure
-            Load-HierarchicalConfig -Config $config
-            $script:HasCategories = $true
-        } elseif ($config.PSObject.Properties['groups']) {
-            # JSON has high level "groups" field -- flat structure
-            Load-FlatConfig -Config $config
-            $script:HasCategories = $false
-        } else {
-            throw "JSON must have either 'categories' or 'groups' array"
-        }
-
-        # Store globally
-        $script:Settings = $config.settings
-        return $true
-    }
-    catch {
-        [System.Windows.Forms.MessageBox]::Show(
-            "Failed to parse configuration file: $ConfigPath`n`nError: $($_.Exception.Message)",
-            "Configuration Error",
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Error
-        )
-        return $false
-    }
-}
-
-<#
-.SYNOPSIS
-    Updates the visual appearance of the kill button based on its logical enabled state.
-
-.DESCRIPTION
-    The kill button is kept always enabled in order to style it (disabled buttons
-    can't be styled, and become unreadable against certain color themes), and its
-    visual state is changed when no jobs running to simulate a disabled state.
-
-    This function updates that visual state of the kill button:
-    - When job running: Uses theme colors for kill button + hand curosr
-    - When no job: Uses grayed-out colors + block cursor
-
-    Call this function whenever the kill button's logical state changes or when
-    the theme is changed (to update colors).
-
-.PARAMETER KillButton
-    The button control that functions as the kill button.
-    Must have a .Tag property containing a boolean value ($true = job running).
-
-.PARAMETER Enable
-    Optional. If provided, force button state to enabled regardless if job running
-
-.EXAMPLE
-    # Update appearance based on current Tag value
-    Update-KillButton -KillButton $script:KillButton
-
-.NOTES
-    Requires Get-ThemeColor function to exist (for theme color retrieval).
-    Grayed out colors are hardcoded to System.Drawing.Color.LightGray and DarkGray.
-#>
-function Update-KillButton {
-    param(
-        [Parameter(Mandatory = $true)]
-        [System.Windows.Forms.Button]$KillButton,
-
-        [Parameter(Mandatory = $false)]
-        [bool]$Enable
-    )
-
-    # initialize to if there's a job marked as running
-    $enableButton = [bool]$script:CurrentRunningJob
-
-    # if user specified a certain state, that overrides
-    if ($PSBoundParameters.ContainsKey('Enable')) {
-        $enableButton = $Enable
-    }
-
-    if ($enableButton) {
-        $KillButton.BackColor = Get-ThemeColor -PropertyName "kill_button"
-        $KillButton.ForeColor = Get-ThemeColor -PropertyName "kill_button_text"
-        $KillButton.Cursor = [System.Windows.Forms.Cursors]::Hand
-    } else {
-        $KillButton.BackColor = [System.Drawing.Color]::LightGray
-        $KillButton.ForeColor = [System.Drawing.Color]::DarkGray
-        $KillButton.Cursor = [System.Windows.Forms.Cursors]::No
-    }
-}
-
-<#
-.SYNOPSIS
-    Creates and configures a TreeView control for category/group navigation.
-
-.DESCRIPTION
-    Returns a TreeView with HideSelection = false (so selected group remains visible).
-    No event handlers attached here – those go in Populate-GUI.
-#>
-function Initialize-CategoryTreeView {
-    $treeView = New-Object System.Windows.Forms.TreeView
-    $treeView.Dock = "Fill"
-    $treeView.Font = New-Object System.Drawing.Font($UI_Font_Family, $UI_Font_Size_Normal)
-    $treeView.HideSelection = $false
-    $treeView.BorderStyle = "None"
-    return $treeView
-}
-
-<#
-.SYNOPSIS
-    Creates and configures the ListBox with owner-draw support for dividers.
-.DESCRIPTION
-    Sets DrawMode to OwnerDrawFixed and attaches the DrawItem event handler.
-    Returns the configured ListBox control.
-.PARAMETER Parent
-    The container control where the ListBox will be placed (caller adds it).
-
-.NOTES
-    The DrawItem event handles:
-    - Dividers: bold font, centered text, gray color, RectangleF with StringFormat
-    - Groups: normal font, left-aligned, colors from current theme, PointF positioning
-    - Selection: highlights text color based on selected/unselected state
-#>
-function Initialize-ListBox {
-    $listBox = New-Object System.Windows.Forms.ListBox
-    $listBox.Dock = "Fill"
-    $listBox.Font = New-Object System.Drawing.Font($UI_Font_Family, $UI_Font_Size_Normal)
-    $listBox.DrawMode = [System.Windows.Forms.DrawMode]::OwnerDrawFixed
-    $defaultHeight = $listBox.Font.Height
-    $padding = 1
-    $listBox.ItemHeight = $defaultHeight + $padding
-    $listBox.IntegralHeight = $false
-
-    # Attach draw event
-    $listBox.Add_DrawItem({
-        param($sender, $e)
-
-        $index = $e.Index
-        if ($index -lt 0 -or $index -ge $sender.Items.Count) { return }
-
-        $item = $sender.Items[$index]
-        $bounds = $e.Bounds
-        $e.DrawBackground()
-
-        if ($item.Type -eq "category") {
-            # Divider styling
-            $font = New-Object System.Drawing.Font($sender.Font, [System.Drawing.FontStyle]::Bold)
-            $brush = [System.Drawing.Brushes]::Gray
-            $format = New-Object System.Drawing.StringFormat
-            $format.Alignment = [System.Drawing.StringAlignment]::Center
-            $format.LineAlignment = [System.Drawing.StringAlignment]::Center
-            $rectF = New-Object System.Drawing.RectangleF($bounds.X, $bounds.Y, $bounds.Width, $bounds.Height)
-            $e.Graphics.DrawString($item.Label, $font, $brush, $rectF, $format)
-
-            # Prevent selection highlight
-            $e.DrawFocusRectangle()
-
-            $font.Dispose()
-            $format.Dispose()
-        } else {
-
-            # Create brush based on selection state
-            $textColor = Get-ThemeColor -PropertyName "list_text"
-            $selectedTextColor = "White"
-
-            if (($e.State -band [System.Windows.Forms.DrawItemState]::Selected) -ne 0) {
-                $brush = New-Object System.Drawing.SolidBrush($selectedTextColor)
-            } else {
-                $brush = New-Object System.Drawing.SolidBrush($textColor)
-            }
-
-            # Draw the text using $brush
-            $rectF = New-Object System.Drawing.RectangleF($bounds.X, $bounds.Y, $bounds.Width, $bounds.Height)
-            $format = New-Object System.Drawing.StringFormat
-            $format.LineAlignment = [System.Drawing.StringAlignment]::Center
-            $e.Graphics.DrawString($item.Label, $sender.Font, $brush, $rectF, $format)
-            $format.Dispose()
-
-            # Dispose after use
-            $brush.Dispose()
-
-            if (($e.State -band [System.Windows.Forms.DrawItemState]::Focus) -ne 0) {
-                $e.DrawFocusRectangle()
-            }
-        }
-    })
-
-    return $listBox
-}
-
-<#
-.SYNOPSIS
-    Programmatically sets a ComboBox's SelectedItem without triggering its event handler.
-
-.DESCRIPTION
-    Uses a global suppression flag ($script:SuppressThemeDropdownEvent) to temporarily
-    prevent the SelectedIndexChanged event from firing while the value is changed.
-    The event handler should check this flag at its beginning and return if true.
-
-.PARAMETER Dropdown
-    The ComboBox control whose selection will be changed.
-
-.PARAMETER NewValue
-    The value to set as the SelectedItem. Must be an item already present in the
-    Dropdown's Items collection.
-
-.EXAMPLE
-    Set-Dropdown -Dropdown $themeCombo -NewValue "dark"
-
-.NOTES
-    Requires $script:SuppressThemeDropdownEvent to be defined (initialized to $false).
-    The event handler must include:
-        if ($script:SuppressThemeDropdownEvent) { return }
-
-    This pattern prevents recursive or unintended event firing during programmatic updates.
-#>
-function Set-Dropdown {
-    param(
-        [Parameter(Mandatory = $true)]
-        [System.Windows.Forms.ComboBox]$Dropdown,
-        [Parameter(Mandatory = $true)]
-        [String]$NewValue
-    )
-    $script:SuppressThemeDropdownEvent = $true
-    $Dropdown.SelectedItem = $NewValue
-    $script:SuppressThemeDropdownEvent = $false
-}
-
-<#
-.SYNOPSIS
-    Creates and configures the toolbar with theme selector and kill button.
-.DESCRIPTION
-    Returns a TableLayoutPanel configured with three columns:
-    - Column 0: Theme label + dropdown (AutoSize)
-    - Column 1: Spacer (Percent = 100%, pushes kill button right)
-    - Column 2: Kill button (AutoSize)
-.PARAMETER Form
-    The main form (used for positioning calculations if needed, though TableLayoutPanel handles it).
-#>
-function Initialize-Toolbar {
-    $toolbar = New-Object System.Windows.Forms.TableLayoutPanel
-    $toolbar.RowCount = 1
-    $toolbar.RowStyles.Clear()
-    $null = $toolbar.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))
-    $toolbar.Dock = "Top"
-    #$toolbar.AutoSize = $true
-    $toolbar.AutoSize = $false
-    #$toolbar.AutoSizeMode = "GrowAndShrink"
-    $toolbar.ColumnCount = 3
-    $toolbar.ColumnStyles.Clear()
-    $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))
-    $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100)))
-    $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))
-
-    # === Column 0: Theme selector ===
-    $themePanel = New-Object System.Windows.Forms.FlowLayoutPanel
-    $themePanel.AutoSize = $true
-    $themePanel.FlowDirection = "LeftToRight"
-    $themePanel.Margin = New-Object System.Windows.Forms.Padding(5, 0, 5, 0)
-
-    $themeLabel = New-Object System.Windows.Forms.Label
-    $themeLabel.Text = "Theme:"
-    $themeLabel.AutoSize = $true
-
-    $themeCombo = New-Object System.Windows.Forms.ComboBox
-    $themeCombo.DropDownStyle = "DropDownList"
-    $themeCombo.Width = 100
-    $themeCombo.DropDownHeight = 400
-    $themeCombo.IntegralHeight = $false
-
-    foreach ($themeName in $Script:Themes.Keys | Sort-Object) {
-        $null = $themeCombo.Items.Add($themeName)
-    }
-    # add a separator that does nothing, then reset
-    # option that will reset back to allowing JSON theme
-    # selection (e.g. that if a user clicks a new Group or
-    # Category with a theme set, it will switch to that --
-    # when a user has selected from the dropdown that functionality
-    # is temporarily prevented; reset will put it back)
-    $null = $themeCombo.Items.Add("---------------")
-    $null = $themeCombo.Items.Add("Reset")
-    $themeCombo.SelectedItem = $script:CurrentThemeName
-    $script:ThemeCombo = $themeCombo
-
-    $themeCombo.Add_SelectedIndexChanged({
-        # global boolean to commnicate that this change
-        # event was triggered programmatically to ONLY
-        # change the displayed option (not via
-        # user selection)
-        if ($script:SuppressThemeDropdownEvent) {
-            return
-        }
-
-        $selected = $this.SelectedItem.ToString()
-        if ($selected.Contains("---")) {
-            # Ignore selection, revert to previous value
-            Set-Dropdown -Dropdown $this -NewValue $script:CurrentThemeName
-            return
-        } elseif ($selected -eq "Reset") {
-            # Reset selected:
-            # get theme for currently selected item and reset to that
-
-            # Reset global boolean UserSelectedTheme
-            # (Get-ItemTheme checks this boolean and if set it
-            # won't update Group / Category themes when selected)
-            $script:UserSelectedTheme = $null
-            # apply theme of currently selected Item
-            $themeToApply = Get-ItemTheme -Item $script:CurrentItem
-            Apply-Theme -themeName $themeToApply
-            return
-        } else {
-            # Regular user selection: apply theme and indicate user selection
-            Apply-Theme -themeName $selected
-            # set user selected theme so group switching won't override it
-            $script:UserSelectedTheme = $this.SelectedItem.ToString()
-        }
-    })
-
-    $null = $themePanel.Controls.Add($themeLabel)
-    $null = $themePanel.Controls.Add($themeCombo)
-    $null = $toolbar.Controls.Add($themePanel, 0, 0)
-
-    # === Column 1: Spacer ===
-    $spacer = New-Object System.Windows.Forms.Panel
-    $spacer.Dock = "Fill"
-    #$spacer.Margin = New-Object System.Windows.Forms.Padding(0)
-    $null = $toolbar.Controls.Add($spacer, 1, 0)
-
-    # === Column 2: Kill button ===
-    $killButton = New-Object System.Windows.Forms.Button
-    $killButton.Text = "Kill Current Job"
-    $killButton.AutoSize = $true
-    $killButton.AutoSizeMode = "GrowAndShrink"
-    $killButton.Padding = New-Object System.Windows.Forms.Padding(10, 5, 10, 5)
-    $killButton.FlatStyle = "Flat"
-    $killButton.Margin = New-Object System.Windows.Forms.Padding(5, 5, 5, 5)
-    # keep killButton always enabled and simulate disabled state
-    # via styling + returning from click event if no job running.
-    # Reason:
-    # disabled state doesn't allow for color styling, and the button
-    # becomes unreadable.
-    $killButton.Enabled = $true
-    $killButton.Add_Click({
-        if ($script:CurrentRunningJob) {
-            Stop-CurrentJob
-        }
-    })
-    # set initial styling
-    Update-KillButton -KillButton $killButton -Enable $false
-
-    $null = $toolbar.Controls.Add($killButton, 2, 0)
-    $script:KillButton = $killButton
-
-    return $toolbar
-}
-
-function Build-GUI {
-    # --- Main Form ---
-    $form = New-Object System.Windows.Forms.Form
-    $form.Text = "Job Launcher"
-    $form.Width = $UI_Window_Width
-    $form.Height = $UI_Window_Height
-    $form.StartPosition = "CenterScreen"
-    $form.MinimumSize = New-Object System.Drawing.Size(600, 400)
-
-    # =========================================================================
-    # ROOT TABLE LAYOUT (2 rows: toolbar, content)
-    # =========================================================================
-    $rootTable = New-Object System.Windows.Forms.TableLayoutPanel
-    $rootTable.Dock = "Fill"
-    $rootTable.AutoSize = $false
-    $rootTable.RowCount = 2
-    $rootTable.ColumnCount = 1
-    $rootTable.RowStyles.Clear()
-    #$null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))  # Toolbar
-    # following line that's commented out: when i actually add the toolbar, the height is excessive. the solution is to get rid of
-    # audoSize and instead use this fixed height. Since I'm not actually adding the toolbar in, I'm using AutoSize so that it doesn't take space
-    $null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 50)))  # Toolbar
-    $null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100))) # Content
-
-    # =========================================================================
-    # TOOLBAR (Row 0)
-    # =========================================================================
-    $toolbar = Initialize-Toolbar
-    $null = $rootTable.Controls.Add($toolbar, 0, 0)
-
-    # =========================================================================
-    # CONTENT PANEL (Row 1) - Contains SplitContainer for left/right layout
-    # =========================================================================
-    $contentPanel = New-Object System.Windows.Forms.Panel
-    $contentPanel.Dock = "Fill"
-    $contentPanel.AutoSize = $false
-
-    # SplitContainer
-    $splitContainer = New-Object System.Windows.Forms.SplitContainer
-    $splitContainer.Dock = "Fill"
-    $splitContainer.Orientation = "Vertical"
-
-    # --- LEFT PANEL (group list) ---
-    $leftPanel = New-Object System.Windows.Forms.Panel
-    $leftPanel.Dock = "Fill"
-    $null = $splitContainer.Panel1.Controls.Add($leftPanel)
-
-    # --- RIGHT PANEL (job buttons + output area) ---
-    $rightPanel = New-Object System.Windows.Forms.TableLayoutPanel
-    $rightPanel.Dock = "Fill"
-    $rightPanel.RowCount = 2
-    $rightPanel.ColumnCount = 1
-    $rightPanel.RowStyles.Clear()
-    $null = $rightPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
-    $null = $rightPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, $UI_Output_Height)))
-
-    # Button flow panel (scrollable)
-    $buttonPanel = New-Object System.Windows.Forms.FlowLayoutPanel
-    $buttonPanel.Dock = "Fill"
-    $buttonPanel.FlowDirection = "TopDown"
-    $buttonPanel.WrapContents = $true
-    $buttonPanel.AutoScroll = $true
-    $buttonPanel.Padding = New-Object System.Windows.Forms.Padding(5)
-    $null = $rightPanel.Controls.Add($buttonPanel, 0, 0)
-
-    # Output textbox
-    $outputTextBox = New-Object System.Windows.Forms.RichTextBox
-    $outputTextBox.Dock = "Fill"
-    $outputTextBox.ReadOnly = $true
-    $outputTextBox.BorderStyle = "FixedSingle"
-
-    $outputFont = if ($UI_Font_OutputMonospaced) {
-        New-Object System.Drawing.Font("Consolas", $UI_Font_Size_Output)
-    } else {
-        New-Object System.Drawing.Font($UI_Font_Family, $UI_Font_Size_Output)
-    }
-    $outputTextBox.Font = $outputFont
-
-    $null = $rightPanel.Controls.Add($outputTextBox, 0, 1)
-    $null = $splitContainer.Panel2.Controls.Add($rightPanel)
-    $null = $contentPanel.Controls.Add($splitContainer)
-    $null = $rootTable.Controls.Add($contentPanel, 0, 1)
-
-    # =========================================================================
-    # STATUS STRIP (bottom of form, outside TableLayoutPanel)
-    # =========================================================================
-    $statusStrip = New-Object System.Windows.Forms.StatusStrip
-    $statusStrip.Dock = "Bottom"
-    $statusLabel = New-Object System.Windows.Forms.ToolStripStatusLabel
-    $statusLabel.Text = "Ready"
-
-    # =========================================================================
-    # ASSEMBLE THE FORM
-    # =========================================================================
-    $null = $form.Controls.Add($rootTable)
-    #$null = $form.Controls.Add($statusStrip)  # Added last, docks to bottom automatically
-
-    # =========================================================================
-    # STORE REFERENCES IN SCRIPT SCOPE (globals for wide access)
-    # =========================================================================
-    $script:OutputTextBox = $outputTextBox
-    $script:StatusLabel = $statusLabel
-    $script:MainForm = $form
-    $script:ButtonPanel = $buttonPanel
-
-    # =========================================================================
-    # RETURN CONTROLS FOR FUNCTIONS THAT NEED THEM
-    # =========================================================================
-    $formControls = @{
-        SplitContainer = $splitContainer
-        Form           = $form
-        LeftPanel      = $leftPanel
-        ButtonPanel    = $buttonPanel
-        RightPanel     = $rightPanel
-        Toolbar        = $toolbar
-    }
-
-    return $formControls
-}
-
-function UpdateButtonsForGroup {
-    param($Group)
-
-    # Clear existing buttons
-    $script:FormControls.ButtonPanel.Controls.Clear()
-    $script:JobButtons.Clear()
-
-    # Direct access to jobs from the group object (no filtering needed)
-    $jobs = $Group.jobs
-
-    foreach ($job in $jobs) {
-        $btn = New-Object System.Windows.Forms.Button
-        $btn.Text = $job.name
-        $btn.Height = $UI_Button_Height
-        $btn.Width = $script:FormControls.ButtonPanel.Width - 20
-        $btn.TextAlign = "MiddleLeft"
-        $btn.FlatStyle = "Flat"
-        $btn.Margin = New-Object System.Windows.Forms.Padding($UI_Button_Margin)
-
-        # Store job data in button's Tag property
-        $btn.Tag = $job
-
-        # Add hover effect
-        $btn.Add_MouseEnter({
-            if ($this.Enabled) { $this.BackColor = Get-ThemeColor -PropertyName "button_hover" }
-        })
-
-        $btn.Add_MouseLeave({
-            if ($this.Enabled) { $this.BackColor = Get-ThemeColor -PropertyName "button" }
-        })
-
-        # Click handler - with conversion for compatibility
-        $btn.Add_Click({
-            $UI_Color_StatusOk = Get-ThemeColor -PropertyName "status_ok" 
-            $UI_Color_StatusError = Get-ThemeColor -PropertyName "status_error" 
-            $UI_Color_Background = Get-ThemeColor -PropertyName "form_background"
-
-            # Convert PSCustomObject to Hashtable
-            $jobToRun = @{}
-            $this.Tag.psobject.Properties | ForEach-Object { $jobToRun[$_.Name] = $_.Value }
-            $buttonRef = $this
-
-            # Disable all job buttons immediately
-            Write-Host "DEBUG: button click handler: About to disable job buttons (kill button should enable)"
-            Update-ButtonStates -Running $true
-
-            if ($UI_ClearOutputBeforeEachJob) {
-                $script:OutputTextBox.Clear()
-            }
-
-            # Run the job
-            $success = Invoke-Job -Job $jobToRun -JobButton $buttonRef
-
-            # Flash button if configured
-            if ($FlashButtonOnComplete) {
-                $originalColor = $buttonRef.BackColor
-                $flashColor = if ($success) { $UI_Color_StatusOk } else { $UI_Color_StatusError }
-                $buttonRef.BackColor = $flashColor
-                $buttonRef.Refresh()
-                Start-Sleep -Milliseconds $FlashDurationMs
-                $buttonRef.BackColor = $originalColor
-                $buttonRef.Refresh()
-            }
-
-            # Re-enable all job buttons
-            Write-Host "DEBUG: button click handler: About to re-enable job buttons (kill button should disable)"
-            Update-ButtonStates -Running $false
-            Update-Status "Ready" $UI_Color_Background
-        })
-
-        $null = $script:FormControls.ButtonPanel.Controls.Add($btn)
-        $script:JobButtons[$job.name] = $btn
     }
 }
 
@@ -2299,70 +1693,170 @@ function Set-Theme {
     }
 }
 
+# =============================================================================
+# UI MANAGEMENT: LEFT PANEL: TOGGLE BUTTONS
+# =============================================================================
+
 <#
 .SYNOPSIS
-    Switches the UI to display a different job item (group or category).
+    Creates the toggle button for switching between List and Tree views.
 
 .DESCRIPTION
-    Orchestrates the full UI refresh when a user selects a new item from the
-    left panel. This function is the single entry point for item changes.
+    Creates a Button control docked to the bottom of the left panel.
+    The button's Tag property stores the current view state:
+    - $true  = Tree view (category groups with collapsible nodes)
+    - $false = Flat view (list with category dividers)
 
-    Steps performed:
-    1. (if item is a group): Recreates all job buttons for the new group (UpdateButtonsForGroup)
-    2. Applies color theme to all UI elements (Apply-Theme)
+    The click event flips the state via Set-ToggleButton and triggers
+    Populate-GUI to rebuild the left panel with the opposite view.
 
-    Separating button recreation from theme application keeps concerns clean
-    and allows theme to be reapplied without rebuilding buttons if needed.
-
-.PARAMETER Item
-    The target item. One of the Hashtable in $script:ListItems set by Load-Config (which parses JSON)
-    Contains .Type, .Label, Parent (if from a "group" node in JSON), and .Node. .Node is the
-    PSObject for the JSON node, which contains .name, .jobs (if Group), .groups (if Category),
-    and optionally .theme.
-
-.EXAMPLE
-    Set-Item -Item $selectedGroup
-    Set-Item -Item $selectedCategory
+.OUTPUTS
+    System.Windows.Forms.Button - The configured toggle button with no initial state (Tag = $null).
 
 .NOTES
-    - Currently nothing happening in Category case other than theme set, 
-      but lumping in with Groups in Set-Item in case there is other unified
-      logic that needs to happen for both.
-    - $Item should be one of the hashtables in $script:ListItems (populated by Load-Config,
-      which parses JSON and creates hashtables for each category or group node found)
-      These hashtables have .Node property, which is the PSObject for the JSON data for
-      that node. Group nodes also have a .Parent property, which is the PSObject for the JSON
-      data for the parent category node. Both .Node and .Parent objects contain the JSON data
-      for that node, i.e. "name", "theme" (optionally), others.
-    - Should pass $Item when calling Get-ItemTheme, but $Item.Node when calling UpdateButtonsForGroup
-      (As it wants the JSON data directly)
-    Called from:
-    - Populate-GUI (initial load, selects the first group)
-    - ListBox SelectedIndexChanged event (user clicks a different group)
-
-    Does not modify the ListBox selection itself - that is handled by the caller
-    or user interaction. This function only responds to the selected group.
+    The caller is responsible for:
+    - Adding the button to $script:FormControls.LeftPanel
+    - Storing the button reference in $script:FormControls.ToggleButton
+    - Initializing the button's state via Set-ToggleButton
 #>
-function Set-Item {
+function Create-ToggleButton {
+    $button = New-Object System.Windows.Forms.Button
+    $button.Dock = "Bottom"
+    $button.Height = 30
+    $button.FlatStyle = "Flat"
+    $button.Tag = $null
+
+    # Click event for Toggle Button: updates
+    # state then calls Populate-GUI again
+    $button.Add_Click({
+        $newState = -not $this.Tag
+        Set-ToggleButton -Button $this -State $newState
+        Populate-GUI
+    })
+
+    return $button
+}
+
+<#
+.SYNOPSIS
+    Updates the toggle button's visual state and Tag property.
+
+.DESCRIPTION
+    Sets the button's Text and Tag based on the provided boolean state:
+    - $true  (Tree view)   -> Text = "Switch to List View", Tag = $true
+    - $false (Flat view)   -> Text = "Switch to Tree View", Tag = $false
+
+    The Tag serves as the single source of truth for the current view state,
+    independent of JSON settings.
+
+.PARAMETER Button
+    The toggle button control to update.
+
+.PARAMETER State
+    Boolean indicating the desired view:
+    - $true  = Switch to Tree view (button shows "Switch to List View")
+    - $false = Switch to Flat view (button shows "Switch to Tree View")
+
+.NOTES
+    Does NOT trigger Populate-GUI. The caller is responsible for rebuilding
+    the view after calling this function.
+#>
+function Set-ToggleButton {
     param(
-        [Parameter(Mandatory = $true)]
-        [PSCustomObject]$Item
+        [System.Windows.Forms.Button]$Button,
+        [boolean]$State
     )
 
-    # update current selected item
-    $script:CurrentItem = $Item
-
-    if ($Item.Type -eq "group") {
-        # Create buttons for this group
-        UpdateButtonsForGroup -Group $Item.Node
+    Write-Host "DEBUG: Set-ToggleButton $State"
+    # State = True ==> set to tree view
+    # State = False ==> set to flat view
+    if ($State -eq $true) {
+        # Set to flat view
+        $Button.Text = "Switch to List View"
+    } else {
+        $Button.Text = "Switch to Tree View"
     }
-
-    # Get the theme name and set it
-    $itemTheme = Get-ItemTheme -Item $Item
-
-    # Apply theme (panel background, any other UI decorations)
-    Apply-Theme -themeName $itemTheme
+    $Button.Tag = $State
 }
+
+function UpdateButtonsForGroup {
+    param($Group)
+
+    # Clear existing buttons
+    $script:FormControls.ButtonPanel.Controls.Clear()
+    $script:JobButtons.Clear()
+
+    # Direct access to jobs from the group object (no filtering needed)
+    $jobs = $Group.jobs
+
+    foreach ($job in $jobs) {
+        $btn = New-Object System.Windows.Forms.Button
+        $btn.Text = $job.name
+        $btn.Height = $UI_Button_Height
+        $btn.Width = $script:FormControls.ButtonPanel.Width - 20
+        $btn.TextAlign = "MiddleLeft"
+        $btn.FlatStyle = "Flat"
+        $btn.Margin = New-Object System.Windows.Forms.Padding($UI_Button_Margin)
+
+        # Store job data in button's Tag property
+        $btn.Tag = $job
+
+        # Add hover effect
+        $btn.Add_MouseEnter({
+            if ($this.Enabled) { $this.BackColor = Get-ThemeColor -PropertyName "button_hover" }
+        })
+
+        $btn.Add_MouseLeave({
+            if ($this.Enabled) { $this.BackColor = Get-ThemeColor -PropertyName "button" }
+        })
+
+        # Click handler - with conversion for compatibility
+        $btn.Add_Click({
+            $UI_Color_StatusOk = Get-ThemeColor -PropertyName "status_ok" 
+            $UI_Color_StatusError = Get-ThemeColor -PropertyName "status_error" 
+            $UI_Color_Background = Get-ThemeColor -PropertyName "form_background"
+
+            # Convert PSCustomObject to Hashtable
+            $jobToRun = @{}
+            $this.Tag.psobject.Properties | ForEach-Object { $jobToRun[$_.Name] = $_.Value }
+            $buttonRef = $this
+
+            # Disable all job buttons immediately
+            Write-Host "DEBUG: button click handler: About to disable job buttons (kill button should enable)"
+            Update-ButtonStates -Running $true
+
+            if ($UI_ClearOutputBeforeEachJob) {
+                $script:OutputTextBox.Clear()
+            }
+
+            # Run the job
+            $success = Invoke-Job -Job $jobToRun -JobButton $buttonRef
+
+            # Flash button if configured
+            if ($FlashButtonOnComplete) {
+                $originalColor = $buttonRef.BackColor
+                $flashColor = if ($success) { $UI_Color_StatusOk } else { $UI_Color_StatusError }
+                $buttonRef.BackColor = $flashColor
+                $buttonRef.Refresh()
+                Start-Sleep -Milliseconds $FlashDurationMs
+                $buttonRef.BackColor = $originalColor
+                $buttonRef.Refresh()
+            }
+
+            # Re-enable all job buttons
+            Write-Host "DEBUG: button click handler: About to re-enable job buttons (kill button should disable)"
+            Update-ButtonStates -Running $false
+            Update-Status "Ready" $UI_Color_Background
+        })
+
+        $null = $script:FormControls.ButtonPanel.Controls.Add($btn)
+        $script:JobButtons[$job.name] = $btn
+    }
+}
+
+# =============================================================================
+# UI MANAGEMENT: LIST AND TREE VIEW IN LEFT PANEL
+# =============================================================================
 
 <#
 .SYNOPSIS
@@ -2623,88 +2117,6 @@ function Populate-ListWithDividers {
 
 <#
 .SYNOPSIS
-    Creates the toggle button for switching between List and Tree views.
-
-.DESCRIPTION
-    Creates a Button control docked to the bottom of the left panel.
-    The button's Tag property stores the current view state:
-    - $true  = Tree view (category groups with collapsible nodes)
-    - $false = Flat view (list with category dividers)
-
-    The click event flips the state via Set-ToggleButton and triggers
-    Populate-GUI to rebuild the left panel with the opposite view.
-
-.OUTPUTS
-    System.Windows.Forms.Button - The configured toggle button with no initial state (Tag = $null).
-
-.NOTES
-    The caller is responsible for:
-    - Adding the button to $script:FormControls.LeftPanel
-    - Storing the button reference in $script:FormControls.ToggleButton
-    - Initializing the button's state via Set-ToggleButton
-#>
-function Create-ToggleButton {
-    $button = New-Object System.Windows.Forms.Button
-    $button.Dock = "Bottom"
-    $button.Height = 30
-    $button.FlatStyle = "Flat"
-    $button.Tag = $null
-
-    # Click event for Toggle Button: updates
-    # state then calls Populate-GUI again
-    $button.Add_Click({
-        $newState = -not $this.Tag
-        Set-ToggleButton -Button $this -State $newState
-        Populate-GUI
-    })
-
-    return $button
-}
-
-<#
-.SYNOPSIS
-    Updates the toggle button's visual state and Tag property.
-
-.DESCRIPTION
-    Sets the button's Text and Tag based on the provided boolean state:
-    - $true  (Tree view)   -> Text = "Switch to List View", Tag = $true
-    - $false (Flat view)   -> Text = "Switch to Tree View", Tag = $false
-
-    The Tag serves as the single source of truth for the current view state,
-    independent of JSON settings.
-
-.PARAMETER Button
-    The toggle button control to update.
-
-.PARAMETER State
-    Boolean indicating the desired view:
-    - $true  = Switch to Tree view (button shows "Switch to List View")
-    - $false = Switch to Flat view (button shows "Switch to Tree View")
-
-.NOTES
-    Does NOT trigger Populate-GUI. The caller is responsible for rebuilding
-    the view after calling this function.
-#>
-function Set-ToggleButton {
-    param(
-        [System.Windows.Forms.Button]$Button,
-        [boolean]$State
-    )
-
-    Write-Host "DEBUG: Set-ToggleButton $State"
-    # State = True ==> set to tree view
-    # State = False ==> set to flat view
-    if ($State -eq $true) {
-        # Set to flat view
-        $Button.Text = "Switch to List View"
-    } else {
-        $Button.Text = "Switch to Tree View"
-    }
-    $Button.Tag = $State
-}
-
-<#
-.SYNOPSIS
     Finds a TreeNode in a TreeView by matching its Tag.Label property.
 .DESCRIPTION
     Searches all category and group nodes for a node whose Tag.Label equals the specified name.
@@ -2832,6 +2244,294 @@ function Initialize-ListBoxItem {
 
 <#
 .SYNOPSIS
+    Creates and configures a TreeView control for category/group navigation.
+
+.DESCRIPTION
+    Returns a TreeView with HideSelection = false (so selected group remains visible).
+    No event handlers attached here – those go in Populate-GUI.
+#>
+function Initialize-CategoryTreeView {
+    $treeView = New-Object System.Windows.Forms.TreeView
+    $treeView.Dock = "Fill"
+    $treeView.Font = New-Object System.Drawing.Font($UI_Font_Family, $UI_Font_Size_Normal)
+    $treeView.HideSelection = $false
+    $treeView.BorderStyle = "None"
+    return $treeView
+}
+
+# =============================================================================
+# UI MANAGEMENT: BUTTON STATES
+# =============================================================================
+
+<#
+.SYNOPSIS
+    Updates the state and appearance of job buttons and kill button based on whether a job is running.
+
+.DESCRIPTION
+    When a job is running ($Running = $true):
+        - All job buttons are disabled (preventing concurrent jobs)
+        - Job buttons retain their normal background color
+        - Kill button is enabled (allowing user to kill the running job)
+
+    When no job is running ($Running = $false):
+        - All job buttons are enabled (ready to start new jobs)
+        - The button that was running (if any) gets a special "running" background color as a visual indicator
+        - Kill button is disabled (nothing to kill)
+
+.PARAMETER Running
+    $true when a job is currently running, $false when no job is running.
+    This parameter determines the state transition for all buttons.
+
+.NOTES
+    Depends on $script:JobButtons (hashtable of job name to button control)
+    Depends on $script:CurrentRunningJob (contains 'Button' key when a job is running)
+    Depends on $script:KillButton (the kill button control)
+    Uses Get-ThemeColor for color values "button" and "button_running"
+#> 
+function Update-ButtonStates {
+    param([bool]$Running)
+    Write-Host "DEBUG: Update-ButtonStates $Running"
+
+    $UI_Color_Button = Get-ThemeColor -PropertyName "button"
+    $UI_Color_ButtonRunning = Get-ThemeColor -PropertyName "button_running"
+
+    foreach ($btn in $script:JobButtons.Values) {
+        # disable job buttons if job running
+        $btn.Enabled = (-not $Running)
+        if (-not $Running) {
+            # Restore original color for all buttons
+            $btn.BackColor = $UI_Color_Button
+        } elseif ($Running -and $script:CurrentRunningJob -and $script:CurrentRunningJob.ContainsKey('Button')) {
+            # Only change color for the currently running job's button
+            $runningButton = $script:CurrentRunningJob['Button']
+            if ($btn -eq $runningButton) {
+                $btn.BackColor = $UI_Color_ButtonRunning
+            }
+        }
+    }
+
+    if ($script:KillButton) {
+        # KillButtn should be opposite of job buttons: enable when jobs running, gray out otherwise
+        Update-KillButton -KillButton $script:KillButton -Enable $Running
+    }
+}
+
+<#
+.SYNOPSIS
+    Updates the visual appearance of the kill button based on its logical enabled state.
+
+.DESCRIPTION
+    The kill button is kept always enabled in order to style it (disabled buttons
+    can't be styled, and become unreadable against certain color themes), and its
+    visual state is changed when no jobs running to simulate a disabled state.
+
+    This function updates that visual state of the kill button:
+    - When job running: Uses theme colors for kill button + hand curosr
+    - When no job: Uses grayed-out colors + block cursor
+
+    Call this function whenever the kill button's logical state changes or when
+    the theme is changed (to update colors).
+
+.PARAMETER KillButton
+    The button control that functions as the kill button.
+    Must have a .Tag property containing a boolean value ($true = job running).
+
+.PARAMETER Enable
+    Optional. If provided, force button state to enabled regardless if job running
+
+.EXAMPLE
+    # Update appearance based on current Tag value
+    Update-KillButton -KillButton $script:KillButton
+
+.NOTES
+    Requires Get-ThemeColor function to exist (for theme color retrieval).
+    Grayed out colors are hardcoded to System.Drawing.Color.LightGray and DarkGray.
+#>
+function Update-KillButton {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Windows.Forms.Button]$KillButton,
+
+        [Parameter(Mandatory = $false)]
+        [bool]$Enable
+    )
+
+    # initialize to if there's a job marked as running
+    $enableButton = [bool]$script:CurrentRunningJob
+
+    # if user specified a certain state, that overrides
+    if ($PSBoundParameters.ContainsKey('Enable')) {
+        $enableButton = $Enable
+    }
+
+    if ($enableButton) {
+        $KillButton.BackColor = Get-ThemeColor -PropertyName "kill_button"
+        $KillButton.ForeColor = Get-ThemeColor -PropertyName "kill_button_text"
+        $KillButton.Cursor = [System.Windows.Forms.Cursors]::Hand
+    } else {
+        $KillButton.BackColor = [System.Drawing.Color]::LightGray
+        $KillButton.ForeColor = [System.Drawing.Color]::DarkGray
+        $KillButton.Cursor = [System.Windows.Forms.Cursors]::No
+    }
+}
+
+# =============================================================================
+# UI MANAGEMENT: UI SWITCHING
+# =============================================================================
+
+<#
+.SYNOPSIS
+    Switches the UI to display a different job item (group or category).
+
+.DESCRIPTION
+    Orchestrates the full UI refresh when a user selects a new item from the
+    left panel. This function is the single entry point for item changes.
+
+    Steps performed:
+    1. (if item is a group): Recreates all job buttons for the new group (UpdateButtonsForGroup)
+    2. Applies color theme to all UI elements (Apply-Theme)
+
+    Separating button recreation from theme application keeps concerns clean
+    and allows theme to be reapplied without rebuilding buttons if needed.
+
+.PARAMETER Item
+    The target item. One of the Hashtable in $script:ListItems set by Load-Config (which parses JSON)
+    Contains .Type, .Label, Parent (if from a "group" node in JSON), and .Node. .Node is the
+    PSObject for the JSON node, which contains .name, .jobs (if Group), .groups (if Category),
+    and optionally .theme.
+
+.EXAMPLE
+    Set-Item -Item $selectedGroup
+    Set-Item -Item $selectedCategory
+
+.NOTES
+    - Currently nothing happening in Category case other than theme set, 
+      but lumping in with Groups in Set-Item in case there is other unified
+      logic that needs to happen for both.
+    - $Item should be one of the hashtables in $script:ListItems (populated by Load-Config,
+      which parses JSON and creates hashtables for each category or group node found)
+      These hashtables have .Node property, which is the PSObject for the JSON data for
+      that node. Group nodes also have a .Parent property, which is the PSObject for the JSON
+      data for the parent category node. Both .Node and .Parent objects contain the JSON data
+      for that node, i.e. "name", "theme" (optionally), others.
+    - Should pass $Item when calling Get-ItemTheme, but $Item.Node when calling UpdateButtonsForGroup
+      (As it wants the JSON data directly)
+    Called from:
+    - Populate-GUI (initial load, selects the first group)
+    - ListBox SelectedIndexChanged event (user clicks a different group)
+
+    Does not modify the ListBox selection itself - that is handled by the caller
+    or user interaction. This function only responds to the selected group.
+#>
+function Set-Item {
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSCustomObject]$Item
+    )
+
+    # update current selected item
+    $script:CurrentItem = $Item
+
+    if ($Item.Type -eq "group") {
+        # Create buttons for this group
+        UpdateButtonsForGroup -Group $Item.Node
+    }
+
+    # Get the theme name and set it
+    $itemTheme = Get-ItemTheme -Item $Item
+
+    # Apply theme (panel background, any other UI decorations)
+    Apply-Theme -themeName $itemTheme
+}
+
+# =============================================================================
+# UI MANAGEMENT: MAIN UI RENDERING
+# =============================================================================
+
+<#
+.SYNOPSIS
+    Creates and configures the ListBox with owner-draw support for dividers.
+.DESCRIPTION
+    Sets DrawMode to OwnerDrawFixed and attaches the DrawItem event handler.
+    Returns the configured ListBox control.
+.PARAMETER Parent
+    The container control where the ListBox will be placed (caller adds it).
+
+.NOTES
+    The DrawItem event handles:
+    - Dividers: bold font, centered text, gray color, RectangleF with StringFormat
+    - Groups: normal font, left-aligned, colors from current theme, PointF positioning
+    - Selection: highlights text color based on selected/unselected state
+#>
+function Initialize-ListBox {
+    $listBox = New-Object System.Windows.Forms.ListBox
+    $listBox.Dock = "Fill"
+    $listBox.Font = New-Object System.Drawing.Font($UI_Font_Family, $UI_Font_Size_Normal)
+    $listBox.DrawMode = [System.Windows.Forms.DrawMode]::OwnerDrawFixed
+    $defaultHeight = $listBox.Font.Height
+    $padding = 1
+    $listBox.ItemHeight = $defaultHeight + $padding
+    $listBox.IntegralHeight = $false
+
+    # Attach draw event
+    $listBox.Add_DrawItem({
+        param($sender, $e)
+
+        $index = $e.Index
+        if ($index -lt 0 -or $index -ge $sender.Items.Count) { return }
+
+        $item = $sender.Items[$index]
+        $bounds = $e.Bounds
+        $e.DrawBackground()
+
+        if ($item.Type -eq "category") {
+            # Divider styling
+            $font = New-Object System.Drawing.Font($sender.Font, [System.Drawing.FontStyle]::Bold)
+            $brush = [System.Drawing.Brushes]::Gray
+            $format = New-Object System.Drawing.StringFormat
+            $format.Alignment = [System.Drawing.StringAlignment]::Center
+            $format.LineAlignment = [System.Drawing.StringAlignment]::Center
+            $rectF = New-Object System.Drawing.RectangleF($bounds.X, $bounds.Y, $bounds.Width, $bounds.Height)
+            $e.Graphics.DrawString($item.Label, $font, $brush, $rectF, $format)
+
+            # Prevent selection highlight
+            $e.DrawFocusRectangle()
+
+            $font.Dispose()
+            $format.Dispose()
+        } else {
+
+            # Create brush based on selection state
+            $textColor = Get-ThemeColor -PropertyName "list_text"
+            $selectedTextColor = "White"
+
+            if (($e.State -band [System.Windows.Forms.DrawItemState]::Selected) -ne 0) {
+                $brush = New-Object System.Drawing.SolidBrush($selectedTextColor)
+            } else {
+                $brush = New-Object System.Drawing.SolidBrush($textColor)
+            }
+
+            # Draw the text using $brush
+            $rectF = New-Object System.Drawing.RectangleF($bounds.X, $bounds.Y, $bounds.Width, $bounds.Height)
+            $format = New-Object System.Drawing.StringFormat
+            $format.LineAlignment = [System.Drawing.StringAlignment]::Center
+            $e.Graphics.DrawString($item.Label, $sender.Font, $brush, $rectF, $format)
+            $format.Dispose()
+
+            # Dispose after use
+            $brush.Dispose()
+
+            if (($e.State -band [System.Windows.Forms.DrawItemState]::Focus) -ne 0) {
+                $e.DrawFocusRectangle()
+            }
+        }
+    })
+
+    return $listBox
+}
+
+<#
+.SYNOPSIS
     Initializes the left panel by selecting the first selectable item (group).
 
 .DESCRIPTION
@@ -2862,6 +2562,254 @@ function Initialize-LeftPanel {
     } else {
         throw "Can't initialize LeftPanel: no TreeView or ListBox were created"
     }
+}
+
+<#
+.SYNOPSIS
+    Creates and configures the toolbar with theme selector and kill button.
+.DESCRIPTION
+    Returns a TableLayoutPanel configured with three columns:
+    - Column 0: Theme label + dropdown (AutoSize)
+    - Column 1: Spacer (Percent = 100%, pushes kill button right)
+    - Column 2: Kill button (AutoSize)
+.PARAMETER Form
+    The main form (used for positioning calculations if needed, though TableLayoutPanel handles it).
+#>
+function Initialize-Toolbar {
+    $toolbar = New-Object System.Windows.Forms.TableLayoutPanel
+    $toolbar.RowCount = 1
+    $toolbar.RowStyles.Clear()
+    $null = $toolbar.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))
+    $toolbar.Dock = "Top"
+    #$toolbar.AutoSize = $true
+    $toolbar.AutoSize = $false
+    #$toolbar.AutoSizeMode = "GrowAndShrink"
+    $toolbar.ColumnCount = 3
+    $toolbar.ColumnStyles.Clear()
+    $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))
+    $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+    $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))
+
+    # === Column 0: Theme selector ===
+    $themePanel = New-Object System.Windows.Forms.FlowLayoutPanel
+    $themePanel.AutoSize = $true
+    $themePanel.FlowDirection = "LeftToRight"
+    $themePanel.Margin = New-Object System.Windows.Forms.Padding(5, 0, 5, 0)
+
+    $themeLabel = New-Object System.Windows.Forms.Label
+    $themeLabel.Text = "Theme:"
+    $themeLabel.AutoSize = $true
+
+    $themeCombo = New-Object System.Windows.Forms.ComboBox
+    $themeCombo.DropDownStyle = "DropDownList"
+    $themeCombo.Width = 100
+    $themeCombo.DropDownHeight = 400
+    $themeCombo.IntegralHeight = $false
+
+    foreach ($themeName in $Script:Themes.Keys | Sort-Object) {
+        $null = $themeCombo.Items.Add($themeName)
+    }
+    # add a separator that does nothing, then reset
+    # option that will reset back to allowing JSON theme
+    # selection (e.g. that if a user clicks a new Group or
+    # Category with a theme set, it will switch to that --
+    # when a user has selected from the dropdown that functionality
+    # is temporarily prevented; reset will put it back)
+    $null = $themeCombo.Items.Add("---------------")
+    $null = $themeCombo.Items.Add("Reset")
+    $themeCombo.SelectedItem = $script:CurrentThemeName
+    $script:ThemeCombo = $themeCombo
+
+    $themeCombo.Add_SelectedIndexChanged({
+        # global boolean to commnicate that this change
+        # event was triggered programmatically to ONLY
+        # change the displayed option (not via
+        # user selection)
+        if ($script:SuppressThemeDropdownEvent) {
+            return
+        }
+
+        $selected = $this.SelectedItem.ToString()
+        if ($selected.Contains("---")) {
+            # Ignore selection, revert to previous value
+            Set-Dropdown -Dropdown $this -NewValue $script:CurrentThemeName
+            return
+        } elseif ($selected -eq "Reset") {
+            # Reset selected:
+            # get theme for currently selected item and reset to that
+
+            # Reset global boolean UserSelectedTheme
+            # (Get-ItemTheme checks this boolean and if set it
+            # won't update Group / Category themes when selected)
+            $script:UserSelectedTheme = $null
+            # apply theme of currently selected Item
+            $themeToApply = Get-ItemTheme -Item $script:CurrentItem
+            Apply-Theme -themeName $themeToApply
+            return
+        } else {
+            # Regular user selection: apply theme and indicate user selection
+            Apply-Theme -themeName $selected
+            # set user selected theme so group switching won't override it
+            $script:UserSelectedTheme = $this.SelectedItem.ToString()
+        }
+    })
+
+    $null = $themePanel.Controls.Add($themeLabel)
+    $null = $themePanel.Controls.Add($themeCombo)
+    $null = $toolbar.Controls.Add($themePanel, 0, 0)
+
+    # === Column 1: Spacer ===
+    $spacer = New-Object System.Windows.Forms.Panel
+    $spacer.Dock = "Fill"
+    #$spacer.Margin = New-Object System.Windows.Forms.Padding(0)
+    $null = $toolbar.Controls.Add($spacer, 1, 0)
+
+    # === Column 2: Kill button ===
+    $killButton = New-Object System.Windows.Forms.Button
+    $killButton.Text = "Kill Current Job"
+    $killButton.AutoSize = $true
+    $killButton.AutoSizeMode = "GrowAndShrink"
+    $killButton.Padding = New-Object System.Windows.Forms.Padding(10, 5, 10, 5)
+    $killButton.FlatStyle = "Flat"
+    $killButton.Margin = New-Object System.Windows.Forms.Padding(5, 5, 5, 5)
+    # keep killButton always enabled and simulate disabled state
+    # via styling + returning from click event if no job running.
+    # Reason:
+    # disabled state doesn't allow for color styling, and the button
+    # becomes unreadable.
+    $killButton.Enabled = $true
+    $killButton.Add_Click({
+        if ($script:CurrentRunningJob) {
+            Stop-CurrentJob
+        }
+    })
+    # set initial styling
+    Update-KillButton -KillButton $killButton -Enable $false
+
+    $null = $toolbar.Controls.Add($killButton, 2, 0)
+    $script:KillButton = $killButton
+
+    return $toolbar
+}
+
+function Build-GUI {
+    # --- Main Form ---
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = "Job Launcher"
+    $form.Width = $UI_Window_Width
+    $form.Height = $UI_Window_Height
+    $form.StartPosition = "CenterScreen"
+    $form.MinimumSize = New-Object System.Drawing.Size(600, 400)
+
+    # =========================================================================
+    # ROOT TABLE LAYOUT (2 rows: toolbar, content)
+    # =========================================================================
+    $rootTable = New-Object System.Windows.Forms.TableLayoutPanel
+    $rootTable.Dock = "Fill"
+    $rootTable.AutoSize = $false
+    $rootTable.RowCount = 2
+    $rootTable.ColumnCount = 1
+    $rootTable.RowStyles.Clear()
+    #$null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))  # Toolbar
+    # following line that's commented out: when i actually add the toolbar, the height is excessive. the solution is to get rid of
+    # audoSize and instead use this fixed height. Since I'm not actually adding the toolbar in, I'm using AutoSize so that it doesn't take space
+    $null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 50)))  # Toolbar
+    $null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100))) # Content
+
+    # =========================================================================
+    # TOOLBAR (Row 0)
+    # =========================================================================
+    $toolbar = Initialize-Toolbar
+    $null = $rootTable.Controls.Add($toolbar, 0, 0)
+
+    # =========================================================================
+    # CONTENT PANEL (Row 1) - Contains SplitContainer for left/right layout
+    # =========================================================================
+    $contentPanel = New-Object System.Windows.Forms.Panel
+    $contentPanel.Dock = "Fill"
+    $contentPanel.AutoSize = $false
+
+    # SplitContainer
+    $splitContainer = New-Object System.Windows.Forms.SplitContainer
+    $splitContainer.Dock = "Fill"
+    $splitContainer.Orientation = "Vertical"
+
+    # --- LEFT PANEL (group list) ---
+    $leftPanel = New-Object System.Windows.Forms.Panel
+    $leftPanel.Dock = "Fill"
+    $null = $splitContainer.Panel1.Controls.Add($leftPanel)
+
+    # --- RIGHT PANEL (job buttons + output area) ---
+    $rightPanel = New-Object System.Windows.Forms.TableLayoutPanel
+    $rightPanel.Dock = "Fill"
+    $rightPanel.RowCount = 2
+    $rightPanel.ColumnCount = 1
+    $rightPanel.RowStyles.Clear()
+    $null = $rightPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+    $null = $rightPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, $UI_Output_Height)))
+
+    # Button flow panel (scrollable)
+    $buttonPanel = New-Object System.Windows.Forms.FlowLayoutPanel
+    $buttonPanel.Dock = "Fill"
+    $buttonPanel.FlowDirection = "TopDown"
+    $buttonPanel.WrapContents = $true
+    $buttonPanel.AutoScroll = $true
+    $buttonPanel.Padding = New-Object System.Windows.Forms.Padding(5)
+    $null = $rightPanel.Controls.Add($buttonPanel, 0, 0)
+
+    # Output textbox
+    $outputTextBox = New-Object System.Windows.Forms.RichTextBox
+    $outputTextBox.Dock = "Fill"
+    $outputTextBox.ReadOnly = $true
+    $outputTextBox.BorderStyle = "FixedSingle"
+
+    $outputFont = if ($UI_Font_OutputMonospaced) {
+        New-Object System.Drawing.Font("Consolas", $UI_Font_Size_Output)
+    } else {
+        New-Object System.Drawing.Font($UI_Font_Family, $UI_Font_Size_Output)
+    }
+    $outputTextBox.Font = $outputFont
+
+    $null = $rightPanel.Controls.Add($outputTextBox, 0, 1)
+    $null = $splitContainer.Panel2.Controls.Add($rightPanel)
+    $null = $contentPanel.Controls.Add($splitContainer)
+    $null = $rootTable.Controls.Add($contentPanel, 0, 1)
+
+    # =========================================================================
+    # STATUS STRIP (bottom of form, outside TableLayoutPanel)
+    # =========================================================================
+    $statusStrip = New-Object System.Windows.Forms.StatusStrip
+    $statusStrip.Dock = "Bottom"
+    $statusLabel = New-Object System.Windows.Forms.ToolStripStatusLabel
+    $statusLabel.Text = "Ready"
+
+    # =========================================================================
+    # ASSEMBLE THE FORM
+    # =========================================================================
+    $null = $form.Controls.Add($rootTable)
+    #$null = $form.Controls.Add($statusStrip)  # Added last, docks to bottom automatically
+
+    # =========================================================================
+    # STORE REFERENCES IN SCRIPT SCOPE (globals for wide access)
+    # =========================================================================
+    $script:OutputTextBox = $outputTextBox
+    $script:StatusLabel = $statusLabel
+    $script:MainForm = $form
+    $script:ButtonPanel = $buttonPanel
+
+    # =========================================================================
+    # RETURN CONTROLS FOR FUNCTIONS THAT NEED THEM
+    # =========================================================================
+    $formControls = @{
+        SplitContainer = $splitContainer
+        Form           = $form
+        LeftPanel      = $leftPanel
+        ButtonPanel    = $buttonPanel
+        RightPanel     = $rightPanel
+        Toolbar        = $toolbar
+    }
+
+    return $formControls
 }
 
 <#
@@ -2927,6 +2875,90 @@ function Populate-GUI {
     }
 
     Initialize-LeftPanel -Item $currSelectedItem
+}
+
+# =============================================================================
+# GENERAL HELPER FUNCTIONS
+# =============================================================================
+
+<#
+.SYNOPSIS
+    Programmatically sets a ComboBox's SelectedItem without triggering its event handler.
+
+.DESCRIPTION
+    Uses a global suppression flag ($script:SuppressThemeDropdownEvent) to temporarily
+    prevent the SelectedIndexChanged event from firing while the value is changed.
+    The event handler should check this flag at its beginning and return if true.
+
+.PARAMETER Dropdown
+    The ComboBox control whose selection will be changed.
+
+.PARAMETER NewValue
+    The value to set as the SelectedItem. Must be an item already present in the
+    Dropdown's Items collection.
+
+.EXAMPLE
+    Set-Dropdown -Dropdown $themeCombo -NewValue "dark"
+
+.NOTES
+    Requires $script:SuppressThemeDropdownEvent to be defined (initialized to $false).
+    The event handler must include:
+        if ($script:SuppressThemeDropdownEvent) { return }
+
+    This pattern prevents recursive or unintended event firing during programmatic updates.
+#>
+function Set-Dropdown {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Windows.Forms.ComboBox]$Dropdown,
+        [Parameter(Mandatory = $true)]
+        [String]$NewValue
+    )
+    $script:SuppressThemeDropdownEvent = $true
+    $Dropdown.SelectedItem = $NewValue
+    $script:SuppressThemeDropdownEvent = $false
+}
+
+<#
+.SYNOPSIS
+    Converts a hexadecimal color string to a System.Drawing.Color object.
+
+.DESCRIPTION
+    Takes a hex color string in formats "#RRGGBB" or "RRGGBB" and returns
+    the corresponding Drawing.Color object. Returns $null if the input
+    is invalid or empty.
+
+.PARAMETER HexColor
+    Hexadecimal color string. Accepts "#RRGGBB" or "RRGGBB" format.
+    Example values: "#FFC107", "28A745", "#1E1E1E"
+
+.EXAMPLE
+    $color = Convert-HexColorToDrawingColor -HexColor "#3C6E71"
+
+.EXAMPLE
+    $color = Convert-HexColorToDrawingColor "DC3545"
+
+.NOTES
+    Returns $null for:
+    - Empty or null input
+    - Strings not exactly 6 hex digits (after optional #)
+    - Invalid hex characters
+
+    Does NOT throw exceptions. Callers should handle $null returns appropriately.
+#>
+function Convert-HexColorToDrawingColor {
+    param([string]$HexColor)
+
+    if (-not $HexColor) { return $null }
+
+    $hex = $HexColor.TrimStart('#')
+    if ($hex.Length -eq 6) {
+        $r = [Convert]::ToInt32($hex.Substring(0,2), 16)
+        $g = [Convert]::ToInt32($hex.Substring(2,2), 16)
+        $b = [Convert]::ToInt32($hex.Substring(4,2), 16)
+        return [System.Drawing.Color]::FromArgb($r, $g, $b)
+    }
+    return $null
 }
 
 # =============================================================================
