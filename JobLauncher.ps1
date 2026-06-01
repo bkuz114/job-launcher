@@ -731,12 +731,20 @@ function Get-JobProcessDetached {
         [string]$WorkingDirectory
     )
 
-    # Arguments to send to Windows cmd
-    $cmdCommand = $Job.command
+    # Create a separate log file to pipe content to
+    $logFile = Initialize-JobLog -Job $Job -WorkingDirectory $WorkingDirectory -Suffix "child"
+
+    # Append a hint that this is for the detached child process
+    Append-JobLog -Path $logFile -Content "This log is for the child process. stdout and stderr (if any) will be appended below."  -HeaderSummary "Info"
+
+    # Arguments for Windows cmd that will be nested in powershell
+    $rawArgs = $Job.command
+    $cmdArgs = "$rawArgs >> `"`"`"$logFile`"`"`" 2>&1"
+    Write-Host "DEBUG: (Detached job) Arg$cmdArgs"
 
     # Arguments to send to powershell.exe
-    $powerShellArguments = "-Command Start-Process cmd -ArgumentList '/c $cmdCommand' -WindowStyle Hidden"
-    Write-Host "DEBUG: $powerShellArguments"
+    $powerShellArguments = "-Command Start-Process cmd -ArgumentList '/c $cmdArgs' -WindowStyle Hidden"
+    Write-Host "DEBUG: (Detached job) Arguments for powershell.exe: $powerShellArguments"
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = "powershell.exe"
