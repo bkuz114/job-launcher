@@ -92,9 +92,10 @@ $KillProcessTree = $true
 $KillTimeoutGraceSeconds = 5
 $TimeoutPollIntervalMs = 1000
 
-# --- Housekeeping ---
+# --- Logging ---
 $LogRetentionDays = 30
 $LogIncludeEnvironmentInfo = $true
+$LogTimestampEntries = $true
 
 # --- Default Paths ---
 $DefaultConfigPath = "launcher_config.json"
@@ -122,8 +123,459 @@ $script:ThemeCombo = $null                  # Theme dropdown
 $script:MainForm = $null                    # Reference to main window
 
 # =============================================================================
+# LOGGING FUNCTIONS
+# =============================================================================
+
+<#
+.SYNOPSIS
+    Generates a unique log filename for a job based on its name and current timestamp.
+
+.DESCRIPTION
+    Creates a filename in the format: sanitized_jobname_YYYYMMDD_HHMMSS[-suffix].log
+    Sanitizes the job name by replacing invalid filesystem characters with underscores.
+    If a suffix is provided, it is appended before the .log extension.
+
+.PARAMETER JobName
+    The name of the job. Must not be null or empty.
+
+.EXAMPLE
+    Generate-JobLogFilename -JobName "My Job" -> "My_Job_20250101_120000.log"
+
+.NOTES
+    Throws an error if JobName is null or empty.
+#>
+function Generate-JobLogFilename {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$JobName
+    )
+
+    if ([string]::IsNullOrWhiteSpace($JobName)) {
+        throw "Generate-JobLogFilename: JobName cannot be null or empty"
+    }
+
+    # Sanitize job name for filename (replace invalid filesystem chars with underscore)
+    $safeName = $JobName -replace '[\\/:*?"<>|]', '_'
+    $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+    return "$safeName`_$timestamp.log"
+}
+
+<#
+.SYNOPSIS
+    Determines the log directory by testing candidate locations in priority order.
+
+.DESCRIPTION
+    Tests each candidate directory in priority order:
+    1. JSON settings.logs_directory (if provided and valid)
+    2. $DefaultLogsDirectory (script default, relative to script location)
+    3. Windows TEMP directory (ultimate fallback: %TEMP%\JobLauncherLogs)
+
+    For each candidate, attempts to create the directory if it doesn't exist.
+    Returns the first candidate that is successfully created or already exists.
+
+    If all candidates fail, throws a fatal error with the last exception.
+
+.OUTPUTS
+    [string] - The full path to the usable log directory.
+
+.EXAMPLE
+    $logRoot = Resolve-LogDirectory
+
+.NOTES
+    Throws a terminating error if no candidate directory is usable.
+    Does not modify $script:Settings or any global state.
+    The TEMP fallback is always writable by the current user.
+#>
+function Resolve-LogDirectory {
+
+    # Determine log directory: JSON setting if provided, otherwise use configured default
+
+    # Check if the 'settings > logs_directory' property exists in JSON and has a value
+    $jsonLogDir = $null
+    if ($script:Settings -and $script:Settings.PSObject.Properties['logs_directory']) {
+        $jsonLogDir = $script:Settings.logs_directory
+    }
+
+    # Define candidate log directories in priority order
+    $candidates = @(
+        $jsonLogDir,                    # User's JSON setting (may be $null)
+        $DefaultLogsDirectory,          # Script default (relative to script)
+        (Join-Path -Path $env:TEMP -ChildPath "JobLauncherLogs")  # Ultimate fallback
+    )
+
+    $logRoot = $null
+    $lastError = $null
+
+    foreach ($candidate in $candidates) {
+        if (-not $candidate) { continue }  # Skip empty/null candidates
+
+        try {
+            if (-not (Test-Path -Path $candidate)) {
+                New-Item -Path $candidate -ItemType Directory -Force | Out-Null
+            }
+            # If we get here, success
+            $logRoot = $candidate
+            break
+        } catch {
+            $lastError = $_
+            Write-Host "DEBUG: Error trying to create logdir! Will proceed to next candidate. Errored dir: $candidate"
+            Write-OutputWithTimestamp "Warning: Cannot use '$candidate' - $($_.Exception.Message)" -IsError $true
+            # Continue to next candidate
+            continue
+        }
+    }
+
+    # After loop, check if we found a working directory
+    if (-not $logRoot) {
+        $errorMsg = "FATAL: Could not determine log directory using any candidate location."
+        if ($lastError) {
+            $errorMsg += "`r`nLast error: $($lastError.Exception.Message)"
+        }
+        throw $errorMsg
+    }
+
+    Write-Host "DEBUG: Log dir determined as = $logRoot"
+    return $logRoot
+}
+
+<#
+.SYNOPSIS
+    Generates a file path for a job log file.
+.DESCRIPTION
+    Creates a full file path for a job log by resolving the log directory,
+    generating a filename from the job name and optional suffix, and joining them.
+    Optionally creates the log directory if requested.
+    Throws an error if the log directory cannot be resolved.
+.PARAMETER JobName
+    Name of the job used to generate the filename. Mandatory parameter.
+.PARAMETER Create
+    If $true, creates the log directory if it does not exist. Uses -Force to prevent errors if already exists.
+.EXAMPLE
+    $path = Generate-JobLogFilepath -JobName "BackupJob" -Create $true
+.NOTES
+    Requires Resolve-LogDirectory and Generate-JobLogFilename functions.
+    Outputs debug message using Write-Host.
+    Throws terminating error if Resolve-LogDirectory returns invalid path.
+#>
+function Generate-JobLogFilepath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$JobName,
+        [boolean]$Create = $false
+    )
+
+    $logRoot = Resolve-LogDirectory
+
+    if (-not $logRoot -or -not (Test-Path -Path $logRoot)) {
+        throw "Generate-JobLogFilepath: Failed to resolve valid log directory. Resolve-LogDirectory returned: '$logRoot'"
+    }
+
+    $filename = Generate-JobLogFilename -JobName $JobName
+    $fullPath = Join-Path -Path $logRoot -ChildPath $filename
+    Write-Host "DEBUG: filepath generated $fullPath"
+
+    # Create directory if requested (-Force prevents error if dir already exists)
+    if ($Create) {
+        New-Item -Path $logRoot -ItemType Directory -Force | Out-Null
+    }
+
+    return $fullPath
+}
+
+<#
+.SYNOPSIS
+    Initializes a new job log file with header information.
+.DESCRIPTION
+    Creates a new log file for a job including job details from the job object,
+    timestamp, command line, working directory, timeout, detached state, and status.
+    Optionally includes OS and PowerShell version information if globally configured.
+    Returns the path to the created log file.
+.PARAMETER Job
+    The job object (hashtable) containing job properties. Must contain "name" and "command" properties.
+.PARAMETER WorkingDirectory
+    The working directory where the job will execute.
+.PARAMETER TimeoutSeconds
+    The timeout value in seconds for the job.
+.EXAMPLE
+    $logPath = Initialize-JobLog -Job $jobObject -WorkingDirectory "C:\temp" -TimeoutSeconds 300
+.EXAMPLE
+    $logPath = Initialize-JobLog -Job $jobObject -WorkingDirectory "C:\temp" -TimeoutSeconds 60 -TerminationReason "Starting"
+.NOTES
+    Requires Get-JobProperty and Generate-JobLogFilepath functions.
+    Uses global variable $LogIncludeEnvironmentInfo if defined.
+    Uses Write-OutputWithTimestamp function (defined elsewhere in script).
+#>
+function Initialize-JobLog {
+    param(
+        [PSObject]$Job,
+        [string]$WorkingDirectory,
+        [int]$TimeoutSeconds
+    )
+
+    # to hold log content
+    $logContent = ""
+
+    # job details to put in header
+    $jobName = Get-JobProperty -Job $Job -Property "name" -ThrowError $true # throw error if no job name found
+    $jobCommand = Get-JobProperty -Job $Job -Property "command" -ThrowError $true # throw error if can't find command
+    $jobDetachedState = switch (Get-JobProperty -Job $Job -Property "detached" -Default $null) {
+        $true { "yes" }
+        $false { "no" }
+        $null { "unknown (detached property not present)" }
+    }
+
+    # generate a safe filepath and create parent directory
+    $logPath = Generate-JobLogFilepath -JobName $JobName -Create $true
+
+$header = @"
+================================================================================
+JOB LOG
+================================================================================
+Job Name:          $jobName
+Start Time:        $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+Command Line:      $jobCommand
+Working Directory: $WorkingDirectory
+Timeout (seconds): $TimeoutSeconds
+Detached:          $jobDetachedState
+================================================================================
+
+"@
+
+    $logContent += $header
+
+    # Add environment info if configured globally
+    if ($LogIncludeEnvironmentInfo) {
+        $osVersion = (Get-WmiObject -Class Win32_OperatingSystem).Caption
+        $psVersion = $PSVersionTable.PSVersion.ToString()
+        $envInfo = @"
+OS Version:        $osVersion
+PowerShell Version: $psVersion
+"@
+        $logContent = $envInfo + "`r`n" + $logContent
+    }
+
+    # Write log content to disk
+    $logContent | Out-File -FilePath $logPath -Encoding UTF8
+
+    Write-OutputWithTimestamp "Log written to: $logPath"
+
+    return $logPath
+}
+
+<#
+.SYNOPSIS
+    Generates a formatted timestamped header line for log entries.
+.DESCRIPTION
+    Creates a header line in the format: "--- [YYYY-MM-DD HH:MM:SS] Summary ---"
+    If Summary is empty or null, produces: "--- [timestamp] ---"
+.PARAMETER Summary
+    Optional summary text to display between the timestamp and closing dashes.
+    Default is empty string.
+.EXAMPLE
+    Generate-JobLogHeaderLine -Summary "Job execution started"
+    Returns: "--- [2026-06-01 04:12:15] Job execution started ---"
+.EXAMPLE
+    Generate-JobLogHeaderLine
+    Returns: "--- [2026-06-01 04:12:15] ---"
+.NOTES
+    Does not add newline characters. Caller is responsible for newline handling.
+#>
+function Generate-JobLogHeaderLine {
+    param(
+        [string]$Summary = ""
+    )
+
+    $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+
+    if ([string]::IsNullOrWhiteSpace($Summary)) {
+        return "--- [$timestamp] ---"
+    } else {
+        return "--- [$timestamp] $Summary ---"
+    }
+}
+
+<#
+.SYNOPSIS
+    Appends content to an existing job log file with optional timestamped header.
+.DESCRIPTION
+    Adds additional content to the end of a job log file.
+    If TimestampHeader is $true, writes a timestamped header line before the content.
+    Throws a terminating error if the log file does not exist.
+.PARAMETER Path
+    Full path to the log file.
+.PARAMETER Content
+    The text content to append to the log file.
+.PARAMETER TimestampHeader
+    If $true, writes a timestamped header line before the content.
+    If $false (default), writes content only.
+.PARAMETER HeaderSummary
+    Optional summary text for the timestamp header. Only used if TimestampHeader is $true.
+    Default is empty string.
+.EXAMPLE
+    Append-JobLog -Path "C:\logs\job.log" -Content "Additional output here"
+.EXAMPLE
+    Append-JobLog -Path "C:\logs\job.log" -Content "Starting process" -TimestampHeader $true -HeaderSummary "Job execution started"
+.NOTES
+    Throws terminating error if log file not found.
+#>
+function Append-JobLog {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Content,
+
+        [boolean]$TimestampHeader = $LogTimestampEntries,
+
+        [string]$HeaderSummary = ""
+    )
+
+    if (-not (Test-Path -Path $Path)) {
+        throw "Append-JobLog: Log file not found: $Path"
+    }
+
+    $output = ""
+
+    if ($TimestampHeader) {
+        $output += Generate-JobLogHeaderLine -Summary $HeaderSummary
+        $output += "`r`n"
+    }
+
+    if ($HeaderSummary -and -not $TimestampHeader) {
+        throw "Append-JobLog: HeaderSummary provided but TimestampHeader is \$false. Set TimestampHeader to \$true or remove HeaderSummary."
+    }
+
+    $output += $Content
+
+    $output | Out-File -FilePath $Path -Encoding UTF8 -Append
+}
+
+<#
+.SYNOPSIS
+    Finalizes a job log with exit information and output.
+.DESCRIPTION
+    Appends a footer to an existing job log containing exit code, termination reason,
+    and optional output sections for general messages, STDOUT, and STDERR.
+    Creates a formatted footer with clear section separators.
+.PARAMETER Path
+    Full path to the log file as a string. Mandatory parameter.
+.PARAMETER ExitCode
+    The exit code returned by the job process. Mandatory parameter.
+.PARAMETER TerminationReason
+    The reason the job terminated (e.g., "Completed", "Timeout", "Error"). Mandatory parameter.
+.PARAMETER GeneralOutput
+    Optional general message to include in the output section. Default is $null.
+.PARAMETER StdOut
+    Optional STDOUT content from the job process. Default is $null.
+.PARAMETER StdErr
+    Optional STDERR content from the job process. Default is $null.
+.EXAMPLE
+    Finalize-JobLog -Path $logPath -ExitCode 0 -TerminationReason "Completed" -StdOut $outputData
+.EXAMPLE
+    Finalize-JobLog -Path $logPath -ExitCode 1 -TerminationReason "Timeout" -GeneralOutput "Job exceeded timeout"
+.NOTES
+    Parameters GeneralOutput, StdOut, and StdErr default to $null.
+    Only non-null values are appended to the log.
+#>
+function Finalize-JobLog {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [int]$ExitCode,
+
+        [Parameter(Mandatory = $true)]
+        [string]$TerminationReason,
+
+        $GeneralOutput = $null,
+        $StdOut = $null,
+        $StdErr = $null
+    )
+
+$footer = @"
+
+================================================================================
+Stop Time:         $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+================================================================================
+Exit Code:         $ExitCode
+Exit Reason:       $TerminationReason
+================================================================================
+"@
+
+    if ($GeneralOutput -ne $null) {
+        $footer += "`r`nGeneral message set in script:`r`n$GeneralOutput"
+    }
+
+    if ($StdOut -ne $null) {
+        $footer += "`r`nSTDOUT:`r`n$StdOut"
+    }
+    if ($StdErr -ne $null) {
+        $footer += "`r`nSTDERR:`r`n$StdErr"
+    }
+
+$footer += @"
+================================================================================
+END OF LOG
+================================================================================
+"@
+
+    $footer | Out-File -FilePath $Path -Encoding UTF8 -Append
+}
+
+# =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
+
+<#
+.SYNOPSIS
+    Safely retrieves a property value from a job hashtable.
+.DESCRIPTION
+    Returns a property value from a job hashtable if the key exists, otherwise returns a default value.
+    Handles missing keys without errors. Assumes the job object is a hashtable.
+.PARAMETER Job
+    The job hashtable to inspect. Must be a hashtable object.
+.PARAMETER Property
+    The key name to look up in the hashtable.
+.PARAMETER Default
+    Value to return if the key does not exist in the hashtable. Default is $null.
+.PARAMETER ThrowError
+    If $true, throws a terminating error when the key does not exist.
+    If $false (default), returns Default value instead.
+.EXAMPLE
+    $jobName = Get-JobProperty -Job $Job -Property "name" -Default "unknown"
+    Returns the value of key "name" or "unknown" if not found.
+.EXAMPLE
+    $detachedState = Get-JobProperty $Job "detached" -ThrowError
+    Throws an error if the "detached" key does not exist.
+.EXAMPLE
+    $value = Get-JobProperty $Job "missing" -Default $false
+    Returns $false because the key does not exist.
+#>
+function Get-JobProperty {
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSObject]$Job,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Property,
+
+        $Default = $null,
+
+        [boolean]$ThrowError = $false
+    )
+
+    if ($Job.ContainsKey($Property)) {
+        return $Job.$Property
+    }
+
+    if ($ThrowError) {
+        throw "Get-JobProperty: Property '$Property' not found on job object."
+    }
+
+    return $Default
+}
 
 <#
 .SYNOPSIS
@@ -188,117 +640,6 @@ function Update-Status {
     $script:StatusLabel.Text = $Text
     $script:StatusLabel.ForeColor = $Color
     # No Refresh needed - ToolStripStatusLabel updates automatically
-}
-
-function Write-LogFile {
-    param(
-        [string]$JobName,
-        [string]$CommandLine,
-        [string]$WorkingDirectory,
-        [int]$TimeoutSeconds,
-        [int]$ExitCode,
-        [string]$Output,
-        [string]$TerminationReason  # "Completed", "Timeout", "KilledByUser", "DirectoryNotFound", etc.
-    )
-
-    # colors for current theme
-    $UI_Color_StatusError = Get-ThemeColor -PropertyName "status_error"
-    $UI_Color_StatusOk = Get-ThemeColor -PropertyName "status_ok"
-    $UI_Color_StatusRunning = Get-ThemeColor -PropertyName "status_running"
-
-    # Determine log directory: JSON setting if provided, otherwise use configured default
-
-    # Check if the 'settings > logs_directory' property exists in JSON and has a value
-    $jsonLogDir = $null
-    if ($script:Settings.PSObject.Properties['logs_directory']) {
-        $jsonLogDir = $script:Settings.logs_directory
-    }
-
-    # Define candidate log directories in priority order
-    $candidates = @(
-        $jsonLogDir,                    # User's JSON setting (may be $null)
-        $DefaultLogsDirectory,          # Script default (relative to script)
-        (Join-Path -Path $env:TEMP -ChildPath "JobLauncherLogs")  # Ultimate fallback
-    )
-
-    $logRoot = $null
-    $lastError = $null
-
-    foreach ($candidate in $candidates) {
-        if (-not $candidate) { continue }  # Skip empty candidates
-
-        try {
-            if (-not (Test-Path -Path $candidate)) {
-                New-Item -Path $candidate -ItemType Directory -Force | Out-Null
-            }
-            # If we get here, success
-            $logRoot = $candidate
-            break
-        } catch {
-            $lastError = $_
-            Write-Host "DEBUG: Error trying to create logdir! Will proceed to next candidate. Errored dir: $logRoot"
-            Write-OutputWithTimestamp "Warning: Cannot use '$candidate' - $($_.Exception.Message)" -IsError $true
-            continue
-        }
-    }
-
-    # After loop, check if we found a working directory
-    if (-not $logRoot) {
-        $errorMsg = "FATAL: Could not create log directory in any candidate location. Last error: $($lastError.Exception.Message)"
-        Write-OutputWithTimestamp $errorMsg -IsError $true
-        Update-Status "Logging failed - cannot continue" $UI_Color_StatusError
-        throw $errorMsg
-    }
-
-    Write-Host "DEBUG: Log dir determined as = $logRoot"
-
-    # Sanitize job name for filename (replace invalid filesystem chars with underscore)
-    $safeJobName = $JobName -replace '[\\/:*?"<>|]', '_'
-    $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-    $logPath = Join-Path -Path $logRoot -ChildPath "$safeJobName`_$timestamp.log"
-
-    # Build log content
-    $logContent = @"
-================================================================================
-JOB EXECUTION LOG
-================================================================================
-Job Name:          $JobName
-Termination Reason: $TerminationReason
-Start Time:        $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
-Command Line:      $CommandLine
-Working Directory: $WorkingDirectory
-Timeout (seconds): $TimeoutSeconds
-Exit Code:         $ExitCode
-================================================================================
-OUTPUT (stdout + stderr combined):
-================================================================================
-$Output
-================================================================================
-END OF LOG
-================================================================================
-"@
-
-    # Add environment info if configured
-    if ($LogIncludeEnvironmentInfo) {
-        $osVersion = (Get-WmiObject -Class Win32_OperatingSystem).Caption
-        $psVersion = $PSVersionTable.PSVersion.ToString()
-        $envInfo = @"
-OS Version:        $osVersion
-PowerShell Version: $psVersion
-"@
-        $logContent = $envInfo + "`r`n" + $logContent
-    }
-
-    # Write to disk
-    $logContent | Out-File -FilePath $logPath -Encoding UTF8
-
-    # Optional: Clean up old logs
-    if ($LogRetentionDays -gt 0) {
-        $cutoffDate = (Get-Date).AddDays(-$LogRetentionDays)
-        Get-ChildItem -Path $logRoot -Filter "*.log" | Where-Object { $_.LastWriteTime -lt $cutoffDate } | Remove-Item -Force
-    }
-
-    Write-OutputWithTimestamp "Log written to: $logPath"
 }
 
 <#
@@ -502,7 +843,7 @@ function Invoke-Job {
 
     $timeoutSeconds = Get-JobTimeout -Job $Job
 
-    # === Validate working directory ===
+    # === Get working directory ===
 
     $workingDir = if ($Job.ContainsKey('working_directory') -and $Job.working_directory) {
         $Job.working_directory
@@ -513,15 +854,19 @@ function Invoke-Job {
         Split-Path -Path $script:MyInvocation.MyCommand.Path -Parent
     }
 
+    # === Initialize logfile with job header ==
+
+    $logFile = Initialize-JobLog -Job $Job -WorkingDirectory $workingDir -TimeoutSeconds $TimeoutSeconds
+
+    # == Validate working directory ==
+
     if (-not (Test-Path -Path $workingDir -PathType Container)) {
         $errorMsg = "Working directory does not exist: $workingDir"
         Write-OutputWithTimestamp $errorMsg -IsError $true
         Update-Status "Failed: Directory not found" $UI_Color_StatusError
 
         # Write minimal log
-        Write-LogFile -JobName $Job.name -CommandLine $Job.command -WorkingDirectory $workingDir `
-                      -TimeoutSeconds $timeoutSeconds -ExitCode -1 -Output $errorMsg `
-                      -TerminationReason "DirectoryNotFound"
+        Finalize-JobLog -Path $logFile -TerminationReason "Working Directory Failure" -GeneralOutput $errorMsg
         return $false
     }
 
@@ -547,6 +892,7 @@ function Invoke-Job {
             JobName = $Job.name
             Button = $JobButton
             StartTime = Get-Date
+            LogPath = $logFile
         }
 
         # === Wait for exit with timeout polling ===
@@ -588,6 +934,8 @@ function Invoke-Job {
 
             $timedOut = $true
             $exitCode = -1  # Custom: timeout
+
+            # Stop-CurrentJob should finalize the job log
         }
 
         # === Capture output (must happen after process exits) ===
@@ -617,9 +965,7 @@ function Invoke-Job {
         $terminationReason = if ($timedOut) { "Timeout" } else { "Completed" }
 
         # Write log file
-        Write-LogFile -JobName $Job.name -CommandLine $Job.command -WorkingDirectory $workingDir `
-                      -TimeoutSeconds $timeoutSeconds -ExitCode $exitCode -Output $combinedOutput `
-                      -TerminationReason $terminationReason
+        Finalize-JobLog -Path $logFile -ExitCode $exitCode -TerminationReason $terminationReason -StdOut $stdout -StdErr $stderr
 
         # Report success/failure
         if ($timedOut) {
@@ -646,9 +992,8 @@ function Invoke-Job {
             try { $process.Kill() } catch { }
         }
 
-        Write-LogFile -JobName $Job.name -CommandLine $Job.command -WorkingDirectory $workingDir `
-                      -TimeoutSeconds $timeoutSeconds -ExitCode -1 -Output $errorMsg `
-                      -TerminationReason "Exception"
+        # Write log file
+        Finalize-JobLog -Path $logFile -ExitCode $exitCode -TerminationReason "Exception" -GeneralOutput $errorMsg
         return $false
     }
     finally {
@@ -814,9 +1159,10 @@ function Stop-CurrentJob {
         }
         $combined = if ($stderr) { "$stdout`r`n$stderr" } else { $stdout }
 
-        Write-LogFile -JobName $jobName -CommandLine "N/A" -WorkingDirectory "N/A" `
-                      -TimeoutSeconds 0 -ExitCode -1 -Output "Killed by user at $(Get-Date -Format 'HH:mm:ss')`r`n$combined" `
-                      -TerminationReason "KilledByUser"
+        # Write to log file if present
+        if ($script:CurrentRunningJob.ContainsKey('LogPath')) { 
+            Finalize-JobLog -Path $logFile -ExitCode -1 -TerminationReason "KilledByUser" -GeneralOutput "Killed by user at $(Get-Date -Format 'HH:mm:ss')`r`n$combined"
+        }
     }
     catch {
         Write-OutputWithTimestamp "Error killing job: $($_.Exception.Message)" -IsError $true
