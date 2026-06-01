@@ -153,6 +153,86 @@ This launches a process in the background which starts the virtual env and start
 | Long‑running background task | Detached |
 | Command with complex quoting that fails in detached mode | Blocking (or wrap in a `.ps1` script) |
 
+## Command Syntax
+
+The `command` field accepts any string that works as a direct executable (first word must be an executable name or path). For detached jobs only, the command is wrapped in `cmd.exe /c`, so any string that works in `cmd.exe` is also acceptable.
+
+### Basic Rules
+
+| Character | Escaping Rule | Example |
+|-----------|---------------|---------|
+| Double quote (`"`) | Escape as `\"` | `"command": "echo \"Hello\""` |
+| Backslash (`\`) | No escaping needed in JSON | `"command": "C:\\Program Files\\app.exe"` |
+| Single quote (`'`) | No escaping needed | `"command": "echo 'Hello'"` |
+
+### Paths with Spaces
+
+When a file path contains spaces, wrap the entire path in escaped double quotes:
+
+```json
+"command": "notepad.exe \"C:\\My Documents\\file.txt\""
+```
+
+**Do not use single quotes** – they will fail.
+
+### Nested Quotes (PowerShell -Command Example)
+
+When using `powershell.exe -Command` with a quoted string, use the following pattern:
+
+```json
+"command": "powershell.exe -Command \"Write-Host \"Hello\"\""
+```
+
+This produces the PowerShell command: `Write-Host "Hello"`
+
+### Commands with Multiple Arguments
+
+No special escaping is required for spaces between arguments:
+
+```json
+"command": "ping -n 10 127.0.0.1"
+```
+
+### Invalid Patterns (Will Fail)
+
+| Pattern | Why It Fails |
+|---------|---------------|
+| Single quotes around path | `cmd.exe` does not recognize single quotes as path delimiters |
+| Unescaped double quotes inside JSON | Invalid JSON syntax |
+| Mixing single and double quotes inconsistently | Quote parsing fails in nested wrapper |
+
+# 1. test file with no spaces in the path (success case)
+
+`"command": "notepad.exe C:\\Users\\Boris\\testfolder\\testfile.txt"`
+
+# 2. test file with no spaces in the path, but using single quotes (failure case)
+
+Same will fail if you attempt to put single quotes around it in JSON
+
+`"command": "notepad.exe 'C:\\Users\\Boris\\testfolder\\testfile.txt'"`
+
+# 3. test file with spaces in path, but using single quotes (failure case)
+
+`"command": "notepad.exe 'C:\\Users\\Boris\\test folder\\testfile.txt'"`
+
+# 4. test file with spaces in path (success case) -- use escaped double quotes in JSON
+
+`"command": "notepad.exe \"C:\\Users\\Boris\\test folder\\testfile.txt\""`
+
+### Examples
+
+| Use Case | Working `command` |
+|----------|-------------------|
+| Simple executable | `"command": "notepad.exe"` |
+| Executable with argument | `"command": "ping -n 10 127.0.0.1"` |
+| Path with spaces | `"command": "notepad.exe \"C:\\My Folder\\file.txt\""` |
+| PowerShell with nested quotes | `"command": "powershell.exe -Command \"Write-Host \"Hello\"\""` |
+| cmd.exe built-in command | `"command": "cmd.exe /c echo Hello"` |
+
+### Notes for Detached Jobs
+
+Detached jobs are more sensitive to quoting errors due to the nested wrapper. The patterns above have been tested and work. If a command fails in a detached job but works as a blocking job, the issue is likely quote escaping. Refer to the **Detached Jobs** section for additional guidance.
+
 ## Themes
 
 The launcher supports custom color themes. Themes control the appearance of the main window, panels, buttons, output area, and status text. Themes can be switched via a dropdown menu in the toolbar, or can be set via `launcher_config.json`.
