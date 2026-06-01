@@ -138,8 +138,13 @@ $script:MainForm = $null                    # Reference to main window
 .PARAMETER JobName
     The name of the job. Must not be null or empty.
 
+.PARAMETER Suffix
+    Optional suffix to add before the .log extension (e.g., "detached").
+    If provided, the format becomes: name_timestamp-suffix.log
+
 .EXAMPLE
     Generate-JobLogFilename -JobName "My Job" -> "My_Job_20250101_120000.log"
+    Generate-JobLogFilename -JobName "My Job" -Suffix "detached" -> "My_Job_20250101_120000-detached.log"
 
 .NOTES
     Throws an error if JobName is null or empty.
@@ -147,7 +152,8 @@ $script:MainForm = $null                    # Reference to main window
 function Generate-JobLogFilename {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$JobName
+        [string]$JobName,
+        [string]$Suffix = ""
     )
 
     if ([string]::IsNullOrWhiteSpace($JobName)) {
@@ -157,7 +163,12 @@ function Generate-JobLogFilename {
     # Sanitize job name for filename (replace invalid filesystem chars with underscore)
     $safeName = $JobName -replace '[\\/:*?"<>|]', '_'
     $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-    return "$safeName`_$timestamp.log"
+
+    if ($Suffix) {
+        return "$safeName`_$timestamp-$Suffix.log"
+    } else {
+        return "$safeName`_$timestamp.log"
+    }
 }
 
 <#
@@ -248,10 +259,14 @@ function Resolve-LogDirectory {
     Throws an error if the log directory cannot be resolved.
 .PARAMETER JobName
     Name of the job used to generate the filename. Mandatory parameter.
+.PARAMETER Suffix
+    Optional suffix to append to the filename before the extension. Default is empty string.
 .PARAMETER Create
     If $true, creates the log directory if it does not exist. Uses -Force to prevent errors if already exists.
 .EXAMPLE
     $path = Generate-JobLogFilepath -JobName "BackupJob" -Create $true
+.EXAMPLE
+    $path = Generate-JobLogFilepath -JobName "BackupJob" -Suffix "retry3" -Create $false
 .NOTES
     Requires Resolve-LogDirectory and Generate-JobLogFilename functions.
     Outputs debug message using Write-Host.
@@ -261,6 +276,7 @@ function Generate-JobLogFilepath {
     param(
         [Parameter(Mandatory = $true)]
         [string]$JobName,
+        [string]$Suffix = "",
         [boolean]$Create = $false
     )
 
@@ -270,7 +286,7 @@ function Generate-JobLogFilepath {
         throw "Generate-JobLogFilepath: Failed to resolve valid log directory. Resolve-LogDirectory returned: '$logRoot'"
     }
 
-    $filename = Generate-JobLogFilename -JobName $JobName
+    $filename = Generate-JobLogFilename -JobName $JobName -Suffix $Suffix
     $fullPath = Join-Path -Path $logRoot -ChildPath $filename
     Write-Host "DEBUG: filepath generated $fullPath"
 
@@ -296,6 +312,9 @@ function Generate-JobLogFilepath {
     The working directory where the job will execute.
 .PARAMETER TimeoutSeconds
     The timeout value in seconds for the job.
+.PARAMETER Suffix
+    Optional suffix to add before the .log extension (e.g., "detached").
+    If provided, the format becomes: name_timestamp-suffix.log
 .EXAMPLE
     $logPath = Initialize-JobLog -Job $jobObject -WorkingDirectory "C:\temp" -TimeoutSeconds 300
 .EXAMPLE
@@ -309,7 +328,8 @@ function Initialize-JobLog {
     param(
         [PSObject]$Job,
         [string]$WorkingDirectory,
-        [int]$TimeoutSeconds
+        [int]$TimeoutSeconds,
+        [string]$Suffix = ""
     )
 
     # to hold log content
@@ -325,7 +345,7 @@ function Initialize-JobLog {
     }
 
     # generate a safe filepath and create parent directory
-    $logPath = Generate-JobLogFilepath -JobName $JobName -Create $true
+    $logPath = Generate-JobLogFilepath -JobName $JobName -Suffix $Suffix -Create $true
 
 $header = @"
 ================================================================================
