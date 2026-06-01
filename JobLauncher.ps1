@@ -1020,6 +1020,8 @@ function Invoke-Job {
             try { $process.Kill() } catch { }
         }
 
+        $exitCode = if ($process.ExitCode -ne $null) { $process.ExitCode } else { -1 }
+
         # Write log file
         Finalize-JobLog -Path $logFile -ExitCode $exitCode -TerminationReason "Exception" -GeneralOutput $errorMsg
         return $false
