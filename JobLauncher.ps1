@@ -1812,7 +1812,7 @@ function Set-Theme {
     - $false = Flat view (list with category dividers)
 
     The click event flips the state via Set-ToggleButton and triggers
-    Populate-GUI to rebuild the left panel with the opposite view.
+    Populate-LeftPanel to rebuild the left panel with the opposite view.
 
 .OUTPUTS
     System.Windows.Forms.Button - The configured toggle button with no initial state (Tag = $null).
@@ -1831,11 +1831,11 @@ function Create-ToggleButton {
     $button.Tag = $null
 
     # Click event for Toggle Button: updates
-    # state then calls Populate-GUI again
+    # state then calls Populate-LeftPanel again
     $button.Add_Click({
         $newState = -not $this.Tag
         Set-ToggleButton -Button $this -State $newState
-        Populate-GUI
+        Populate-LeftPanel
     })
 
     return $button
@@ -1862,7 +1862,7 @@ function Create-ToggleButton {
     - $false = Switch to Flat view (button shows "Switch to Tree View")
 
 .NOTES
-    Does NOT trigger Populate-GUI. The caller is responsible for rebuilding
+    Does NOT trigger Populate-LeftPanel. The caller is responsible for rebuilding
     the view after calling this function.
 #>
 function Set-ToggleButton {
@@ -2075,7 +2075,7 @@ function Measure-ListBoxMaxWidth {
     Auto-sizes the left panel width based on the widest group name.
 
 .NOTES
-    Called by Populate-GUI when $script:HasCategories = $false.
+    Called by Populate-LeftPanel when $script:HasCategories = $false.
     Requires $script:NavigationItems to be populated (by Load-FlatConfig).
     Requires $script:FormControls.LeftPanel to exist (created in Build-GUI).
 #>
@@ -2128,7 +2128,7 @@ function Populate-FlatList {
     left panel width, and selects the first group node.
 
 .NOTES
-    This function is called by Populate-GUI when "view": "tree" is set in JSON.
+    This function is called by Populate-LeftPanel when "view": "tree" is set in JSON.
     Requires $script:FormControls.TreeView to exist (created by Initialize-CategoryTreeView).
     Requires $script:FormControls.SplitContainer for auto-width adjustment.
 #>
@@ -2204,7 +2204,7 @@ function Populate-TreeView {
     to the left panel.
 
 .NOTES
-    This function is called by Populate-GUI when "view": "flat" is set in JSON
+    This function is called by Populate-LeftPanel when "view": "flat" is set in JSON
     (or when no view setting is present, as flat is the default).
 
     Requires $script:FormControls.LeftPanel to exist (created in Build-GUI).
@@ -2380,7 +2380,7 @@ function Initialize-ListBoxItem {
 
 .DESCRIPTION
     Returns a TreeView with HideSelection = false (so selected group remains visible).
-    No event handlers attached here – those go in Populate-GUI.
+    No event handlers attached here – those go in Populate-LeftPanel.
 #>
 function Initialize-CategoryTreeView {
     $treeView = New-Object System.Windows.Forms.TreeView
@@ -2549,7 +2549,7 @@ function Update-KillButton {
     - Should pass $Item when calling Get-ItemTheme, but $Item.Node when calling Update-ButtonsForGroup
       (As it wants the JSON data directly)
     Called from:
-    - Populate-GUI (initial load, selects the first group)
+    - Populate-LeftPanel (initial load, selects the first group)
     - ListBox SelectedIndexChanged event (user clicks a different group)
 
     Does not modify the ListBox selection itself - that is handled by the caller
@@ -2667,7 +2667,7 @@ function Initialize-ListBox {
     Initializes the left panel by selecting the first selectable item (group).
 
 .DESCRIPTION
-    Called after Populate-GUI creates either a TreeView or ListBox.
+    Called after Populate-LeftPanel creates either a TreeView or ListBox.
     Determines which control exists, selects the first group (not divider or category),
     and triggers Set-Item to load the corresponding jobs and apply theme.
 
@@ -2837,7 +2837,7 @@ function Initialize-Toolbar {
 
     Returns a hashtable containing references to key controls (SplitContainer,
     Form, LeftPanel, ButtonPanel, RightPanel, Toolbar) for later use by
-    Populate-GUI and theme application functions.
+    Populate-LeftPanel and theme application functions.
 
 .OUTPUTS
     [hashtable] - Contains the following keys:
@@ -2853,7 +2853,7 @@ function Initialize-Toolbar {
 
 .NOTES
     Does NOT populate the left panel with groups or categories — that is
-    handled separately by Populate-GUI after this function returns.
+    handled separately by Populate-LeftPanel after this function returns.
     Uses user-configurable settings ($UI_Window_Width, $UI_Output_Height, etc.)
     defined at the top of the script.
 #>
@@ -3011,7 +3011,7 @@ function Build-GUI {
     This function assumes $script:FormControls.LeftPanel already exists as
     the container panel created in Build-GUI.
 #>
-function Populate-GUI {
+function Populate-LeftPanel {
 
     # save initial state
     $currSelectedItem = $script:CurrentItem
@@ -3190,7 +3190,7 @@ function Main {
     Write-Host "DEBUG: GUI built successfully, about to populate"
 
     # Populate with jobs - pass the entire hashtable
-    Populate-GUI
+    Populate-LeftPanel
 
     Write-Host "DEBUG: GUI built, setting up close handler"
 
