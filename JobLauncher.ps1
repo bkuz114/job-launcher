@@ -2979,19 +2979,35 @@ function Build-GUI {
 
 <#
 .SYNOPSIS
-    Entry point for populating the left panel based on the configured view.
+    Populates the left panel based on JSON structure and user view preference.
 
 .DESCRIPTION
-    Reads the "view" setting from JSON (defaults to "flat") and dispatches to
-    either Populate-ListView (flat groups) or Populate-TreeView (collapsible
-    categories). Both views share the same underlying data structure
-    ($script:NavigationItems) built by Load-Configuration.
+    Handles three distinct scenarios:
 
+    1. Flat JSON (no categories, only groups)
+       - Always uses a simple ListBox
+       - No toggle button
+       - Function: Populate-FlatList
+
+    2. Hierarchical JSON with Tree View (user selected or default)
+       - Uses TreeView with collapsible categories
+       - Toggle button shows "Switch to List View"
+       - Function: Populate-TreeView
+
+    3. Hierarchical JSON with Flat/List View (user selected)
+       - Uses owner-draw ListBox with bold, centered category dividers
+       - Toggle button shows "Switch to Tree View"
+       - Function: Populate-ListWithDividers
+
+    The control reference is always stored in $script:FormControls under
+    either .TreeView or .ListBox, depending on which view is active.
+    (Case 1 also stores its ListBox under .ListBox.)
+
+    To be more specific on how to determine which scenario will be populated:
+    the function looks at two things:
+    (1) "view" setting from JSON (defaults to "flat")
+    (2) presence of "categories" key (without it, only scenario 1. is possible)
 .NOTES
-    "view": "flat"   – Uses ListBox with category dividers (original behavior)
-    "view": "tree"   – Uses TreeView with collapsible categories
-    No other values are supported; invalid values default to "flat".
-
     This function assumes $script:FormControls.LeftPanel already exists as
     the container panel created in Build-GUI.
 #>
