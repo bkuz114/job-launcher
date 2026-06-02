@@ -542,6 +542,7 @@ function Generate-JobLogFilepath {
 #>
 function Initialize-JobLog {
     param(
+        [Parameter(Mandatory = $true)]
         [PSObject]$Job,
         [string]$WorkingDirectory,
         [int]$TimeoutSeconds,
@@ -853,9 +854,19 @@ function Get-JobProperty {
 
 .NOTES
     The first word of .command must be an executable in PATH or a full path.
+
+    WorkingDirectory is currently optional. The function does not validate
+    the directory or throw if missing — that responsibility falls to the
+    caller (Invoke-Job). Whether WorkingDirectory should be mandatory is
+    an open architectural question: the process will use the calling
+    process's working directory if not specified, which may be acceptable
+    for some jobs but could cause silent failures for others.
+    TODO: Revisit this decision. Consider making mandatory or adding
+    validation with a meaningful error message.
 #>
 function Get-JobProcessBlocking {
     param(
+        [Parameter(Mandatory = $true)]
         [PSObject]$Job,
         [string]$WorkingDirectory
     )
@@ -898,9 +909,19 @@ function Get-JobProcessBlocking {
 
 .NOTES
     The returned process exits almost immediately; the user's command runs independently.
+
+    WorkingDirectory is currently optional. The function does not validate
+    the directory or throw if missing — that responsibility falls to the
+    caller (Invoke-Job). Whether WorkingDirectory should be mandatory is
+    an open architectural question: the process will use the calling
+    process's working directory if not specified, which may be acceptable
+    for some jobs but could cause silent failures for others.
+    TODO: Revisit this decision. Consider making mandatory or adding
+    validation with a meaningful error message.
 #>
 function Get-JobProcessDetached {
     param(
+        [Parameter(Mandatory = $true)]
         [PSObject]$Job,
         [string]$WorkingDirectory
     )
@@ -953,9 +974,19 @@ function Get-JobProcessDetached {
 .EXAMPLE
     $process = Get-JobProcess -Job $Job
     $process.Start()
+.NOTES
+    WorkingDirectory is currently optional. The function does not validate
+    the directory or throw if missing — that responsibility falls to the
+    caller (Invoke-Job). Whether WorkingDirectory should be mandatory is
+    an open architectural question: the process will use the calling
+    process's working directory if not specified, which may be acceptable
+    for some jobs but could cause silent failures for others.
+    TODO: Revisit this decision. Consider making mandatory or adding
+    validation with a meaningful error message.
 #>
 function Get-JobProcess {
     param(
+        [Parameter(Mandatory = $true)]
         [PSObject]$Job,
         [string]$WorkingDirectory
     )
@@ -1084,7 +1115,12 @@ function Get-JobWorkingDirectory {
     Reuses Write-LogFile for persistent logging.
 #>
 function Invoke-Job {
-    param([PSObject]$Job, [System.Windows.Forms.Button]$JobButton)
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSObject]$Job,
+        [Parameter(Mandatory = $true)]
+        [System.Windows.Forms.Button]$JobButton
+    )
 
     $UI_Color_StatusError = Get-ThemeColor -PropertyName "status_error"
     $UI_Color_StatusOk = Get-ThemeColor -PropertyName "status_ok"
@@ -1399,7 +1435,10 @@ function Load-Themes {
     The key to look up (e.g., "form_background", "button").
 #>
 function Get-ThemeColor {
-    param([string]$PropertyName)
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PropertyName
+    )
 
     if (-not $script:CurrentThemePalette) {
         throw "No current theme palette set. Call Set-Theme first."
@@ -1451,7 +1490,10 @@ function Get-ThemeColor {
     Defensive checks prevent errors if any UI control is missing.
 #>
 function Apply-Theme {
-    param([string]$themeName)
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$themeName
+    )
 
     # Set the theme globally first
     Set-Theme -themeName $ThemeName
@@ -1682,7 +1724,10 @@ function Get-ItemTheme {
     separately to refresh the interface after changing the theme.
 #>
 function Set-Theme {
-    param([string]$themeName)
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$themeName
+    )
 
     # Validate theme exists
     if ($Script:Themes.ContainsKey($themeName)) {
@@ -1763,6 +1808,7 @@ function Create-ToggleButton {
 #>
 function Set-ToggleButton {
     param(
+        [Parameter(Mandatory = $true)]
         [System.Windows.Forms.Button]$Button,
         [boolean]$State
     )
@@ -1780,7 +1826,10 @@ function Set-ToggleButton {
 }
 
 function UpdateButtonsForGroup {
-    param($Group)
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSObject]$Group
+    )
 
     # Clear existing buttons
     $script:FormControls.ButtonPanel.Controls.Clear()
