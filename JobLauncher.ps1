@@ -186,10 +186,22 @@ function Load-HierarchicalConfig {
             if (-not $group.jobs) { throw "Group '$($group.name)' missing 'jobs' array" }
             if ($group.jobs.Count -eq 0) { throw "Group '$($group.name)' has no jobs defined" }
 
-            # Validate each job in the group
+            # Validate each job in the group and wrap in Job Item
+            $wrappedJobs = @()
             foreach ($job in $group.jobs) {
                 if ([string]::IsNullOrWhiteSpace($job.name)) { throw "Job missing 'name' field in group '$($group.name)'" }
                 if ([string]::IsNullOrWhiteSpace($job.command)) { throw "Job '$($job.name)' missing 'command' field" }
+
+                # Create Job Item with parent references
+                $jobItem = [PSCustomObject]@{
+                    Type           = "job"
+                    Label          = $job.name
+                    Node           = $job
+                    ParentGroup    = $group
+                    ParentCategory = $category
+                }
+                $jobItem | Add-Member -MemberType ScriptMethod -Name ToString -Value { $this.Label } -Force
+                $wrappedJobs += $jobItem
             }
 
             # add group to global ListItems
@@ -197,6 +209,7 @@ function Load-HierarchicalConfig {
                 Type = "group"
                 Label = $group.name
                 Node = $group
+                JobItems = $wrappedJobs # add wrapped jobs 
                 Parent = $category  # add parent category to retrieve theme from
             }
             $groupItem | Add-Member -MemberType ScriptMethod -Name ToString -Value { $this.Label } -Force
@@ -242,10 +255,22 @@ function Load-FlatConfig {
         if (-not $group.jobs) { throw "Group '$($group.name)' missing 'jobs' array" }
         if ($group.jobs.Count -eq 0) { throw "Group '$($group.name)' has no jobs defined" }
 
-        # Validate each job in the group
+        # Validate each job in the group and wrap in Job Item
+        $wrappedJobs = @()
         foreach ($job in $group.jobs) {
             if ([string]::IsNullOrWhiteSpace($job.name)) { throw "Job missing 'name' field in group '$($group.name)'" }
             if ([string]::IsNullOrWhiteSpace($job.command)) { throw "Job '$($job.name)' missing 'command' field" }
+
+            # Create Job Item with parent references (no category in flat config)
+            $jobItem = [PSCustomObject]@{
+                Type           = "job"
+                Label          = $job.name
+                Node           = $job
+                ParentGroup    = $group
+                ParentCategory = $null
+            }
+            $jobItem | Add-Member -MemberType ScriptMethod -Name ToString -Value { $this.Label } -Force
+            $wrappedJobs += $jobItem
         }
 
         # add entry with custom ToString function
@@ -255,6 +280,7 @@ function Load-FlatConfig {
         $groupItem = [PSCustomObject]@{
             Type = "group"
             Label = $group.name
+            JobItems = $wrappedJobs # add wrapped jobs 
             Node = $group
         }
         # DO NOT REMOVE THIS. It's what allows you to add these items to $script:FormControls.ListBox
@@ -528,7 +554,10 @@ function Generate-JobLogFilepath {
     Optionally includes OS and PowerShell version information if globally configured.
     Returns the path to the created log file.
 .PARAMETER Job
-    The job object (hashtable) containing job properties. Must contain "name" and "command" properties.
+    The raw job configuration object (PSCustomObject) parsed from JSON.
+    Created during JSON loading in Load-FlatConfig or Load-HierarchicalConfig.
+    Contains what JSON contains: .name and .command properties, plus optional
+    .detached, .timeout_seconds, and .working_directory.
 .PARAMETER WorkingDirectory
     The working directory where the job will execute.
 .PARAMETER TimeoutSeconds
@@ -829,12 +858,52 @@ function Update-Status {
 
 <#
 .SYNOPSIS
+    Extracts the raw job configuration from a Job Item.
+    (e.g. the raw json data that's stored in the .Node attr of a Job Item)
+
+.DESCRIPTION
+    If the input is a Job Item (has .Node property), returns .Node.
+    Throws a terminating error if .Node is missing or null.
+
+.PARAMETER JobItem
+    A wrapped Job Item object created during JSON loading.
+
+.OUTPUTS
+    The raw job configuration object (PSCustomObject from original JSON).
+
+.EXAMPLE
+    $JobConfig = Get-JobConfig -JobItem $JobItem
+
+.NOTES
+    This function does not accept raw JobConfig objects. Callers must
+    ensure they pass a proper Job Item. This strictness ensures parent
+    references (ParentGroup, ParentCategory) are always available when
+    needed for upward traversal.
+#>
+function Get-JobConfig {
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSObject]$JobItem
+    )
+
+    if (-not ($JobItem.PSObject.Properties['Node'] -and $JobItem.Node)) {
+        throw "Get-JobConfig: Input is not a valid Job Item (missing .Node property)."
+    }
+
+    return $JobItem.Node
+}
+
+<#
+.SYNOPSIS
     Safely retrieves a property value from a job hashtable.
 .DESCRIPTION
     Returns a property value from a job hashtable if the key exists, otherwise returns a default value.
     Handles missing keys without errors. Assumes the job object is a hashtable.
 .PARAMETER Job
-    The job hashtable to inspect. Must be a hashtable object.
+    The raw job configuration object (PSCustomObject) parsed from JSON.
+    Created during JSON loading in Load-FlatConfig or Load-HierarchicalConfig.
+    Contains what JSON contains: .name and .command properties, plus optional
+    .detached, .timeout_seconds, and .working_directory.
 .PARAMETER Property
     The key name to look up in the hashtable.
 .PARAMETER Default
@@ -865,7 +934,10 @@ function Get-JobProperty {
         [boolean]$ThrowError = $false
     )
 
-    if ($Job.ContainsKey($Property)) {
+    # Check if property exists on PSCustomObject
+    $propertyExists = $Job.PSObject.Properties[$Property] -ne $null
+
+    if ($propertyExists) {
         return $Job.$Property
     }
 
@@ -889,7 +961,10 @@ function Get-JobProperty {
     - UTF8 encoding for output streams
 
 .PARAMETER Job
-    The job object with .command property.
+    The raw job configuration object (PSCustomObject) parsed from JSON.
+    Created during JSON loading in Load-FlatConfig or Load-HierarchicalConfig.
+    Contains what JSON contains: .name and .command properties, plus optional
+    .detached, .timeout_seconds, and .working_directory.
 
 .NOTES
     The first word of .command must be an executable in PATH or a full path.
@@ -942,7 +1017,11 @@ function Get-JobProcessBlocking {
     Working directory is set on the outer powershell.exe process.
 
 .PARAMETER Job
-    The job object with .command and .name properties.
+    The raw job configuration object (PSCustomObject) parsed from JSON.
+    Created during JSON loading in Load-FlatConfig or Load-HierarchicalConfig.
+    Contains what JSON contains: .name and .command properties, plus optional
+    .detached, .timeout_seconds, and .working_directory.
+
 .PARAMETER WorkingDirectory
     The resolved working directory for the job. Must be a valid, existing path.
 
@@ -1006,7 +1085,11 @@ function Get-JobProcessDetached {
     and window behavior.
 
 .PARAMETER Job
-    The job object (PSObject) containing at minimum .command and optionally .detached.
+    The raw job configuration object (PSCustomObject) parsed from JSON.
+    Created during JSON loading in Load-FlatConfig or Load-HierarchicalConfig.
+    Contains what JSON contains: .name and .command properties, plus optional
+    .detached, .timeout_seconds, and .working_directory.
+
 .PARAMETER WorkingDirectory
     The resolved working directory for the job. Must be a valid, existing path.
 
@@ -1030,7 +1113,10 @@ function Get-JobProcess {
         [string]$WorkingDirectory
     )
 
-    if ($Job.ContainsKey('detached') -and $Job.detached -eq $true) {
+    # determine 'detached' state (this property might not exist)
+    $isDetached = Get-JobProperty -Job $Job -Property "detached" -Default $false
+
+    if ($isDetached -eq $true) {
         return Get-JobProcessDetached -Job $Job -WorkingDirectory $WorkingDirectory
     } else {
         return Get-JobProcessBlocking -Job $Job -WorkingDirectory $WorkingDirectory
@@ -1046,9 +1132,24 @@ function Get-JobProcess {
     1. If job.detached = true → returns 1 (short timeout)
     2. If job.timeout_seconds is set and non-null → returns that value
     3. Otherwise → returns script:Settings.default_timeout_seconds
+.PARAMETER JobItem
+    The wrapped Job Item object representing a single executable job.
 
-.PARAMETER Job
-    The job object with optional .detached and .timeout_seconds properties.
+    This is NOT the raw JSON from the config file. It is an enhanced object
+    created during JSON loading in either Load-FlatConfig or
+    Load-HierarchicalConfig (search for Type = "job").
+
+    The JobItem contains:
+    - .Type      = "job" (identifies it as a Job Item)
+    - .Node      = raw JobConfig object from the original JSON
+                  (contains .name, .command, and optional .detached,
+                   .timeout_seconds, .working_directory)
+    - .ParentGroup     = reference to the parent Group object
+    - .ParentCategory  = reference to the parent Category (may be $null)
+
+    This structure allows upward traversal to resolve settings that may be
+    defined at the group or category level (e.g., working_directory,
+    timeout_seconds), following the same pattern as Get-ItemTheme.
 .PARAMETER WorkingDirectory
     The resolved working directory for the job. Must be a valid, existing path.
 
@@ -1058,18 +1159,33 @@ function Get-JobProcess {
 function Get-JobTimeout {
     param(
         [Parameter(Mandatory = $true)]
-        [PSObject]$Job
+        [PSObject]$JobItem
     )
 
-    if ($Job.ContainsKey('detached') -and $Job.detached -eq $true) {
+    # Get raw job JSON
+    $rawJob = Get-JobConfig -JobItem $JobItem
+
+    # 1. Job-level detached flag
+    if ($rawJob.PSObject.Properties['detached'] -and $rawJob.detached -eq $true) {
         return 10
     }
 
-    if ($Job.ContainsKey('timeout_seconds')  -and $Job.timeout_seconds) {
-        return $Job.timeout_seconds
+    # 2. Job-level timeout_seconds
+    if ($rawJob.PSObject.Properties['timeout_seconds'] -and $rawJob.timeout_seconds) {
+        return $rawJob.timeout_seconds
     }
 
-    # fallback to default
+    # 3. Parent group-level timeout_seconds
+    if ($JobItem.PSObject.Properties['ParentGroup'] -and $JobItem.ParentGroup.PSObject.Properties['timeout_seconds'] -and $JobItem.ParentGroup.timeout_seconds) {
+        return $JobItem.ParentGroup.timeout_seconds
+    }
+
+    # 4. Parent category-level timeout_seconds
+    if ($JobItem.PSObject.Properties['ParentCategory'] -and $JobItem.ParentCategory -and $JobItem.ParentCategory.PSObject.Properties['timeout_seconds'] -and $JobItem.ParentCategory.timeout_seconds) {
+        return $JobItem.ParentCategory.timeout_seconds
+    }
+
+    # 5. Global settings fallback
     return $script:Settings.default_timeout_seconds
 }
 
@@ -1083,12 +1199,27 @@ function Get-JobTimeout {
     2. Global script setting 'default_working_directory'
     3. Fallback to the script's directory where this function is defined
 
-.PARAMETER Job
-    The job object (hashtable) containing job properties.
-    Must support ContainsKey method and dot notation for property access.
+.PARAMETER JobItem
+    The wrapped Job Item object representing a single executable job.
+
+    This is NOT the raw JSON from the config file. It is an enhanced object
+    created during JSON loading in either Load-FlatConfig or
+    Load-HierarchicalConfig (search for Type = "job").
+
+    The JobItem contains:
+    - .Type      = "job" (identifies it as a Job Item)
+    - .Node      = raw JobConfig object from the original JSON
+                  (contains .name, .command, and optional .detached,
+                   .timeout_seconds, .working_directory)
+    - .ParentGroup     = reference to the parent Group object
+    - .ParentCategory  = reference to the parent Category (may be $null)
+
+    This structure allows upward traversal to resolve settings that may be
+    defined at the group or category level (e.g., working_directory,
+    timeout_seconds), following the same pattern as Get-ItemTheme.
 
 .EXAMPLE
-    $workingDir = Get-JobWorkingDirectory -Job $jobObject
+    $workingDir = Get-JobWorkingDirectory -JobItem $jobObject
 
 .NOTES
     The function does not validate whether the returned directory exists.
@@ -1103,18 +1234,33 @@ function Get-JobTimeout {
 function Get-JobWorkingDirectory {
     param(
         [Parameter(Mandatory = $true)]
-        [PSObject]$Job
+        [PSObject]$JobItem
     )
 
-    if ($Job.ContainsKey('working_directory') -and $Job.working_directory) {
-        return $Job.working_directory
+    # Get raw job JSON
+    $rawJob = Get-JobConfig -JobItem $JobItem
+
+    # 1. working_directory property directly on job itself
+    if ($rawJob.PSObject.Properties['working_directory'] -and $rawJob.working_directory) {
+        return $rawJob.working_directory
     }
 
-    if ($script:Settings.default_working_directory) {
+    # 2. Parent group-level (only if Job is a Job Item with ParentGroup)
+    if ($JobItem.PSObject.Properties['ParentGroup'] -and $JobItem.ParentGroup.PSObject.Properties['working_directory'] -and $JobItem.ParentGroup.working_directory) {
+        return $JobItem.ParentGroup.working_directory
+    }
+
+    # 3. Parent category-level (only if Job is a Job Item with ParentCategory)
+    if ($JobItem.PSObject.Properties['ParentCategory'] -and $JobItem.ParentCategory -and $JobItem.ParentCategory.PSObject.Properties['working_directory'] -and $JobItem.ParentCategory.working_directory) {
+        return $JobItem.ParentCategory.working_directory
+    }
+
+    # 4. Global settings
+    if ($script:Settings.PSObject.Properties['default_working_directory'] -and $script:Settings.default_working_directory) {
         return $script:Settings.default_working_directory
     }
 
-    # Fallback to the script's directory
+    # 5. Fallback to the script's directory
     return $PSScriptRoot
 }
 
@@ -1138,15 +1284,33 @@ function Get-JobWorkingDirectory {
     is disabled (stdout/stderr streams are $null). The user's command continues
     running independently after the process exits.
 
-.PARAMETER Job
-    The job object with .name, .command, and optional .detached, .timeout_seconds,
-    .working_directory properties.
+.PARAMETER JobItem
+    The wrapped Job Item object representing a single executable job.
+
+    This is NOT the raw JSON from the config file. It is an enhanced object
+    created during JSON loading in either Load-FlatConfig or
+    Load-HierarchicalConfig (search for Type = "job").
+
+    The JobItem contains:
+    - .Type      = "job" (identifies it as a Job Item)
+    - .Label     = job name (display string)
+    - .Node      = raw JobConfig object from the original JSON
+                  (contains .name, .command, and optional .detached,
+                   .timeout_seconds, .working_directory)
+    - .ParentGroup     = reference to the parent Group object
+    - .ParentCategory  = reference to the parent Category (may be $null)
+
+    This structure allows upward traversal to resolve settings that may be
+    defined at the group or category level (e.g., working_directory,
+    timeout_seconds), following the same pattern as Get-ItemTheme.
+
+    To access the raw job config for execution, use Get-JobConfig -JobItem $JobItem.
 
 .PARAMETER JobButton
     The Button control associated with this job (used for visual feedback).
 
 .EXAMPLE
-    Invoke-Job -Job $selectedJob -JobButton $jobButton
+    Invoke-Job -JobItem $selectedJob -JobButton $jobButton
 
 .NOTES
     Sets and clears $script:CurrentRunningJob and $script:KillRequested.
@@ -1156,27 +1320,30 @@ function Get-JobWorkingDirectory {
 function Invoke-Job {
     param(
         [Parameter(Mandatory = $true)]
-        [PSObject]$Job,
+        [PSObject]$JobItem,
         [Parameter(Mandatory = $true)]
         [System.Windows.Forms.Button]$JobButton
     )
 
+    # Extract raw JSON data from Job Item (stored in .Node property)
+    $rawJob = Get-JobConfig -JobItem $JobItem
+
     $UI_Color_StatusError = Get-ThemeColor -PropertyName "status_error"
     $UI_Color_StatusOk = Get-ThemeColor -PropertyName "status_ok"
-    $jobName = Get-JobProperty -Job $Job -Property "name" -ThrowError $true # throw error if no job name found
-    $jobCommand = Get-JobProperty -Job $Job -Property "command" -ThrowError $true # throw error if can't find command
+    $jobName = Get-JobProperty -Job $rawJob -Property "name" -ThrowError $true # throw error if no job name found
+    $jobCommand = Get-JobProperty -Job $rawJob -Property "command" -ThrowError $true # throw error if can't find command
 
     # == Determine Timeout ==
 
-    $timeoutSeconds = Get-JobTimeout -Job $Job
+    $timeoutSeconds = Get-JobTimeout -JobItem $JobItem
 
     # === Get working directory ===
 
-    $workingDir = Get-JobWorkingDirectory -Job $Job
+    $workingDir = Get-JobWorkingDirectory -JobItem $JobItem
 
     # === Initialize logfile with job header ==
 
-    $logFile = Initialize-JobLog -Job $Job -WorkingDirectory $workingDir -TimeoutSeconds $TimeoutSeconds
+    $logFile = Initialize-JobLog -Job $rawJob -WorkingDirectory $workingDir -TimeoutSeconds $TimeoutSeconds
 
     # == Validate working directory ==
 
@@ -1192,7 +1359,7 @@ function Invoke-Job {
 
     # === Prepare proces ===
 
-    $process = Get-JobProcess -Job $Job -WorkingDirectory $workingDir
+    $process = Get-JobProcess -Job $rawJob -WorkingDirectory $workingDir
 
     # === Start process ===
 
@@ -1209,7 +1376,7 @@ function Invoke-Job {
         # Record running job state
         $script:CurrentRunningJob = @{
             Process = $process
-            JobName = $Job.name
+            JobName = $rawJob.name
             Button = $JobButton
             StartTime = Get-Date
             LogPath = $logFile
@@ -1896,41 +2063,72 @@ function Set-ToggleButton {
     hashtable keyed by job name for later state updates (enabling/disabling,
     color changes).
 
-.PARAMETER Group
-    A PSObject representing a group from the JSON configuration. Must contain
-    a "jobs" property (array) where each job has "name" and "command" properties.
-    This is typically $Item.Node when the selected item is of Type "group".
+.PARAMETER GroupItem
+    A Group Item object created during JSON loading (in Load-HierarchicalConfig
+    or Load-FlatConfig). Contains:
+    - .Type     = "group"
+    - .Label    = group name (display string)
+    - .Node     = raw JSON group object (contains .name, .jobs array, and optional
+                  .working_directory, .timeout_seconds, .theme)
+    - .Parent   = parent Category Item (if hierarchical JSON, otherwise $null)
+    - .JobItems = array of wrapped Job Items belonging to this group
+
+    This is NOT the raw JSON from the config file. It is an enhanced object
+    created during JSON loading in either Load-FlatConfig or
+    Load-HierarchicalConfig (search for Type = "group").
+    The JSON is at the .Node field if you needed.
+
+    This is typically passed from Set-Item as $script:CurrentItem (when the
+    selected item has Type = "group").
 
 .EXAMPLE
-    Update-ButtonsForGroup -Group $selectedGroup.Node
+    Update-ButtonsForGroup -GroupItem $selectedGroup
 
 .NOTES
-    Called by Set-Item when a new group is selected. The button panel reference
-    is stored in $script:FormControls.ButtonPanel.
+    - Called by Set-Item when a new group is selected. The button panel reference
+      is stored in $script:FormControls.ButtonPanel.
+    - a Group Item is needed (wrapped created during json parsing) rather than raw
+      group config itself (raw json data), because need access to array of wrapped
+      Job Item objects for each job in the group (rather than just the job JSON);
+      Invoke-Job requires the Job Item (rather than just the job json) so that calls
+      to Get-JobWorkingDirectory, Get-JobTimeout will can traverse parent nodes in
+      the json
 #>
 function Update-ButtonsForGroup {
     param(
         [Parameter(Mandatory = $true)]
-        [PSObject]$Group
+        [PSObject]$GroupItem
     )
+
+    # Validate GroupItem has the required .Jobs property
+    if (-not ($GroupItem.PSObject.Properties['JobItems'] -and $GroupItem.JobItems)) {
+        throw "Update-ButtonsForGroup: GroupItem is missing .Jobs property. Expected a valid Group Item with wrapped Job Items."
+    }
 
     # Clear existing buttons
     $script:FormControls.ButtonPanel.Controls.Clear()
     $script:JobButtons.Clear()
 
-    # Direct access to jobs from the group object (no filtering needed)
-    $jobs = $Group.jobs
+    # List of Job Items attached to the Group Item during JSON parsing
+    $jobs = $GroupItem.JobItems
 
     foreach ($job in $jobs) {
+
+        # Get raw job JSON
+        $rawJob = Get-JobConfig -JobItem $job
+
+        $jobName = $rawJob.name
+
         $btn = New-Object System.Windows.Forms.Button
-        $btn.Text = $job.name
+        $btn.Text = $jobName
         $btn.Height = $UI_Button_Height
         $btn.Width = $script:FormControls.ButtonPanel.Width - 20
         $btn.TextAlign = "MiddleLeft"
         $btn.FlatStyle = "Flat"
         $btn.Margin = New-Object System.Windows.Forms.Padding($UI_Button_Margin)
 
-        # Store job data in button's Tag property
+        # Store Job Item (contains .Node with raw JSON, plus parent references) in button's Tag property
+        # so it can be passed to Invoke-Job on button click
         $btn.Tag = $job
 
         # Add hover effect
@@ -1948,9 +2146,6 @@ function Update-ButtonsForGroup {
             $UI_Color_StatusError = Get-ThemeColor -PropertyName "status_error" 
             $UI_Color_Background = Get-ThemeColor -PropertyName "form_background"
 
-            # Convert PSCustomObject to Hashtable
-            $jobToRun = @{}
-            $this.Tag.psobject.Properties | ForEach-Object { $jobToRun[$_.Name] = $_.Value }
             $buttonRef = $this
 
             # Disable all job buttons immediately
@@ -1962,7 +2157,7 @@ function Update-ButtonsForGroup {
             }
 
             # Run the job
-            $success = Invoke-Job -Job $jobToRun -JobButton $buttonRef
+            $success = Invoke-Job -JobItem $this.Tag -JobButton $buttonRef
 
             # Flash button if configured
             if ($FlashButtonOnComplete) {
@@ -1982,7 +2177,7 @@ function Update-ButtonsForGroup {
         })
 
         $null = $script:FormControls.ButtonPanel.Controls.Add($btn)
-        $script:JobButtons[$job.name] = $btn
+        $script:JobButtons[$jobName] = $btn
     }
 }
 
@@ -2566,7 +2761,7 @@ function Set-Item {
 
     if ($Item.Type -eq "group") {
         # Create buttons for this group
-        Update-ButtonsForGroup -Group $Item.Node
+        Update-ButtonsForGroup -GroupItem $Item
     }
 
     # Get the theme name and set it
