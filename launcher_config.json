@@ -111,6 +111,76 @@
       ]
     },
     {
+      "name": "Detached",
+      "groups": [
+        {
+          "name": "Notepad Tests",
+          "jobs": [
+            {
+              "name": "Notepad - No Args",
+              "command": "notepad.exe",
+              "detached": true
+            },
+            {
+              "name": "Notepad - Path with Spaces",
+              "command": "notepad.exe \"C:\\Users\\user\\test folder\\testfile.txt\"",
+              "detached": true
+            }
+          ]
+        },
+        {
+          "name": "Console Output Tests",
+          "jobs": [
+            {
+              "name": "Echo Hello (cmd)",
+              "command": "cmd.exe /c echo Hello from detached job",
+              "detached": true
+            },
+            {
+              "name": "PowerShell Write-Host",
+              "command": "powershell.exe -Command \"Write-Host \"Hello from PowerShell\"\"",
+              "detached": true
+            },
+            {
+              "name": "List Directory (cmd)",
+              "command": "cmd.exe /c dir C:\\",
+              "detached": true
+            }
+          ]
+        },
+        {
+          "name": "Error Output Tests",
+          "jobs": [
+            {
+              "name": "Non-existent Command",
+              "command": "notexist.exe",
+              "detached": true
+            },
+            {
+              "name": "Invalid Path",
+              "command": "notepad.exe \"Z:\\Invalid\\Path\\file.txt\"",
+              "detached": true
+            }
+          ]
+        },
+        {
+          "name": "Long-running Tests",
+          "jobs": [
+            {
+              "name": "Ping (10 seconds)",
+              "command": "ping -n 10 127.0.0.1",
+              "detached": true
+            },
+            {
+              "name": "Calculator",
+              "command": "calc.exe",
+              "detached": true
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "Tests",
       "groups": [
         {
@@ -156,6 +226,16 @@
               "command": "powershell.exe -Command \"1..120 | ForEach-Object { Write-Host 'Alive at second' $_; Start-Sleep -Seconds 1 }\"",
               "working_directory": null,
               "timeout_seconds": 120
+            },
+            {
+              "name": "Non-existent Command (Detached)",
+              "command": "notexist.exe",
+              "detached": true
+            },
+            {
+              "name": "Detaed Invalid Path",
+              "command": "notepad.exe \"Z:\\Invalid\\Path\\file.txt\"",
+              "detached": true
             }
           ]
         }
