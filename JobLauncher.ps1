@@ -1483,7 +1483,7 @@ function Get-ThemeColor {
     Apply-Theme -themeName "default"
 
 .NOTES
-    This function is called by Set-Item after UpdateButtonsForGroup has created
+    This function is called by Set-Item after Update-ButtonsForGroup has created
     the job buttons. It assumes $script:JobButtons is populated with all
     current buttons.
 
@@ -1825,7 +1825,7 @@ function Set-ToggleButton {
     $Button.Tag = $State
 }
 
-function UpdateButtonsForGroup {
+function Update-ButtonsForGroup {
     param(
         [Parameter(Mandatory = $true)]
         [PSObject]$Group
@@ -2437,7 +2437,7 @@ function Update-KillButton {
     left panel. This function is the single entry point for item changes.
 
     Steps performed:
-    1. (if item is a group): Recreates all job buttons for the new group (UpdateButtonsForGroup)
+    1. (if item is a group): Recreates all job buttons for the new group (Update-ButtonsForGroup)
     2. Applies color theme to all UI elements (Apply-Theme)
 
     Separating button recreation from theme application keeps concerns clean
@@ -2463,7 +2463,7 @@ function Update-KillButton {
       that node. Group nodes also have a .Parent property, which is the PSObject for the JSON
       data for the parent category node. Both .Node and .Parent objects contain the JSON data
       for that node, i.e. "name", "theme" (optionally), others.
-    - Should pass $Item when calling Get-ItemTheme, but $Item.Node when calling UpdateButtonsForGroup
+    - Should pass $Item when calling Get-ItemTheme, but $Item.Node when calling Update-ButtonsForGroup
       (As it wants the JSON data directly)
     Called from:
     - Populate-GUI (initial load, selects the first group)
@@ -2483,7 +2483,7 @@ function Set-Item {
 
     if ($Item.Type -eq "group") {
         # Create buttons for this group
-        UpdateButtonsForGroup -Group $Item.Node
+        Update-ButtonsForGroup -Group $Item.Node
     }
 
     # Get the theme name and set it
