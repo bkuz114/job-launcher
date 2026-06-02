@@ -1266,6 +1266,112 @@ function Get-JobWorkingDirectory {
 
 <#
 .SYNOPSIS
+    Performs complete cleanup, logging, and UI updates for a job execution.
+
+.DESCRIPTION
+    Handles all post-job tasks including:
+    - Killing the process if still running
+    - Capturing stdout/stderr if not already captured
+    - Writing the final log file via Finalize-JobLog
+    - Displaying output in the UI
+    - Updating UI status
+    - Disposing the process object
+    - Cleaning up script-level variables
+
+    This function is designed to be called from both early return paths (e.g.,
+    working directory validation) and the finally block of the main execution.
+
+.PARAMETER Result
+    PSCustomObject containing all job state and results with properties:
+    - Success (bool)
+    - ExitCode (int)
+    - TerminationReason (string)
+    - StdOut (string)
+    - StdErr (string)
+    - GeneralOutput (string)
+    - TimedOut (bool)
+    - IsError (bool)
+    - StatusMessage (string)
+    - LauncherMessage (string)
+    - JobName (string)
+    - LogFile (string)
+
+.PARAMETER Process
+    The System.Diagnostics.Process object. If $null, process-related
+    operations are skipped.
+
+.NOTES
+    This function is called automatically from Invoke-Job and should not
+    typically be called directly by other code.
+#>
+function Cleanup-Job {
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSObject]$Result,
+
+        [System.Diagnostics.Process]$Process
+    )
+
+    $UI_Color_StatusError = Get-ThemeColor -PropertyName "status_error"
+    $UI_Color_StatusOk = Get-ThemeColor -PropertyName "status_ok"
+
+    # === Kill process if still running ===
+    if ($Process -and (-not $Process.HasExited)) {
+        try { $Process.Kill() } catch { }
+    }
+
+    # === Capture output if not already captured and process has exited ===
+    if ($Process -and $Process.HasExited) {
+        if ([string]::IsNullOrWhiteSpace($Result.StdOut) -and $Process.StandardOutput -ne $null) {
+            $Result.StdOut = $Process.StandardOutput.ReadToEnd()
+        }
+        if ([string]::IsNullOrWhiteSpace($Result.StdErr) -and $Process.StandardError -ne $null) {
+            $Result.StdErr = $Process.StandardError.ReadToEnd()
+        }
+    }
+
+    # === Write log file ===
+    if ($Result.LogFile) {
+        Finalize-JobLog -Path $Result.LogFile -ExitCode $Result.ExitCode -TerminationReason $Result.TerminationReason -StdOut $Result.StdOut -StdErr $Result.StdErr -GeneralOutput $Result.GeneralOutput
+    }
+
+    # === Display output if present ===
+    $hasStdOut = (-not [string]::IsNullOrWhiteSpace($Result.StdOut))
+    $hasStdErr = (-not [string]::IsNullOrWhiteSpace($Result.StdErr))
+
+    Write-OutputWithTimestamp "--- Job Output ---"
+
+    if ($hasStdOut -or $hasStdErr) {
+        if ($hasStdOut) {
+            Write-OutputWithTimestamp "[StdOut]"
+            Write-OutputWithTimestamp $Result.StdOut.TrimEnd()
+        }
+
+        if ($hasStdErr) {
+            Write-OutputWithTimestamp "[StdErr]" -IsError $true
+            Write-OutputWithTimestamp $Result.StdErr.TrimEnd() -IsError $true
+        }
+    } else {
+        Write-OutputWithTimestamp "[No output captured]"
+    }
+
+    # === Update UI status and output message ===
+    if ($Result.LauncherMessage) {
+        Write-OutputWithTimestamp "--- Execution Result ---"
+        Write-OutputWithTimestamp $Result.LauncherMessage -IsError $Result.IsError
+    }
+    Update-Status $Result.StatusMessage $(if ($Result.IsError) { $UI_Color_StatusError } else { $UI_Color_StatusOk })
+
+    # === Clean up process and script variables ===
+    if ($Process) {
+        $Process.Dispose()
+    }
+    $script:KillRequested = $false
+    $script:CurrentRunningJob = $null
+}
+
+<#
+.SYNOPSIS
     Executes a job (blocking or detached) with timeout, logging, and UI feedback.
 
 .DESCRIPTION
@@ -1345,30 +1451,59 @@ function Invoke-Job {
 
     $logFile = Initialize-JobLog -Job $rawJob -WorkingDirectory $workingDir -TimeoutSeconds $TimeoutSeconds
 
-    # == Validate working directory ==
+    # === Initialize result object ===
+
+    # This object accumulates job state and is passed to Cleanup-Job
+    # which will use it to cleanup once the job completes.
+    # Update as you encounter exit conditions (success, timeout, job kill, etc.)
+    #
+    # Fields:
+    #   StdOut/StdErr → captured after process exit
+    #   ExitCode → from process or timeout
+    #   TerminationReason → "Timeout", "Completed", "Exception", etc.
+    #   GeneralOutput → high-level status messages (kill, timeout, exceptions)
+    #   StatusMessage/LauncherMessage → displayed in UI
+    $result = [PSCustomObject]@{
+        Success = $false
+        ExitCode = $null
+        TerminationReason = ""
+        StdOut = $null
+        StdErr = $null
+        GeneralOutput = $null
+        TimedOut = $false
+        IsError = $true
+        StatusMessage = ""
+        LauncherMessage = ""
+        JobName = $jobName
+        JobCommand = $jobCommand
+        WorkingDirectory = $workingDir
+        TimeoutSeconds = $timeoutSeconds
+        LogFile = $logFile
+    }
+
+    # === Initialize process variable ===
+
+    $process = $null
+
+    # === Validate working directory ===
 
     if (-not (Test-Path -Path $workingDir -PathType Container)) {
         $errorMsg = "Working directory does not exist: $workingDir"
-        Write-OutputWithTimestamp $errorMsg -IsError $true
-        Update-Status "Failed: Directory not found" $UI_Color_StatusError
+        $result.TerminationReason = "Working Directory Failure"
+        $result.GeneralOutput = $errorMsg
+        $result.ExitCode = -1
+        $result.Success = $false
+        $result.IsError = $true
+        $result.StatusMessage = "Failed: Directory not found"
+        $result.LauncherMessage = $errorMsg
 
-        # Write minimal log
-        Finalize-JobLog -Path $logFile -ExitCode -1 -TerminationReason "Working Directory Failure" -GeneralOutput $errorMsg
+        Cleanup-Job -Result $result -Process $process
         return $false
     }
 
-    # === Prepare proces ===
+    # === Prepare process ===
 
     $process = Get-JobProcess -Job $rawJob -WorkingDirectory $workingDir
-
-    # === Start process ===
-
-    Write-OutputWithTimestamp "Starting job: $jobName"
-    if ($ShowFullCommandInOutput) {
-        Write-OutputWithTimestamp "Command: $jobCommand"
-        Write-OutputWithTimestamp "Working directory: $workingDir"
-        Write-OutputWithTimestamp "Timeout: $($timeoutSeconds) seconds"
-    }
 
     try {
         $process.Start() | Out-Null
@@ -1383,6 +1518,7 @@ function Invoke-Job {
         # Record running job state
         $script:CurrentRunningJob = @{
             Process = $process
+            Result = $result
             JobName = $jobName
             Button = $JobButton
             StartTime = Get-Date
@@ -1390,7 +1526,6 @@ function Invoke-Job {
         }
 
         # === Wait for exit with timeout polling ===
-        $timedOut = $false
         $totalWaitMs = $timeoutSeconds * 1000
         $elapsedMs = 0
 
@@ -1402,7 +1537,7 @@ function Invoke-Job {
 
             # Check if kill button was clicked
             if ($script:KillRequested) {
-                Write-OutputWithTimestamp "Kill requested, stopping job" -IsError $true
+                $result.GeneralOutput = "Kill requested, stopping job"
                 break
             }
 
@@ -1414,22 +1549,12 @@ function Invoke-Job {
 
         if (-not $process.HasExited) {
             # Timeout reached - kill process
-            Write-OutputWithTimestamp "TIMEOUT: Job exceeded $timeoutSeconds seconds" -IsError $true
-            Update-Status "TIMEOUT - Killing job" $UI_Color_StatusError
-
-            if ($KillProcessTree) {
-                # taskkill /T kills the process tree
-                $killProcess = Start-Process -FilePath "taskkill.exe" -ArgumentList "/T /F /PID $jobPid" -NoNewWindow -Wait -PassThru
-                Start-Sleep -Seconds $KillTimeoutGraceSeconds
-            } else {
-                $process.Kill()
-                Start-Sleep -Milliseconds 500
-            }
-
-            $timedOut = $true
-            $exitCode = -1  # Custom: timeout
-
-            # Stop-CurrentJob should finalize the job log
+            $result.TimedOut = $true
+            $result.ExitCode = -1
+            $result.TerminationReason = "Timeout"
+            $result.IsError = $true
+            $result.StatusMessage = "TIMEOUT: $jobName"
+            $result.GeneralOutput = "TIMEOUT: Job exceeded $timeoutSeconds seconds"
         }
 
         # === Capture output (must happen after process exits) ===
@@ -1445,58 +1570,50 @@ function Invoke-Job {
             $stderr = $process.StandardError.ReadToEnd()
         }
 
-        $combinedOutput = if ($stderr) { "$stdout`r`n$stderr" } else { $stdout }
+        $result.StdOut = $stdout
+        $result.StdErr = $stderr
 
-        $exitCode = if ($timedOut) { -1 } elseif ($process.HasExited) { $process.ExitCode } else { -2 }
-
-        # Display output in GUI
-        if ($combinedOutput.Trim()) {
-            Write-OutputWithTimestamp "--- Output ---"
-            Write-OutputWithTimestamp $combinedOutput.TrimEnd()
+        # If timeout already set exit code, otherwise get from process
+        if (-not $result.TimedOut) {
+            $result.ExitCode = if ($process.HasExited) { $process.ExitCode } else { -2 }
+            $result.TerminationReason = "Completed"
         }
 
-        # Determine termination reason
-        $terminationReason = if ($timedOut) { "Timeout" } else { "Completed" }
+        # Determine success/failure for result object
+        $result.Success = (-not $result.TimedOut) -and ($result.ExitCode -eq 0)
 
-        # Write log file
-        Finalize-JobLog -Path $logFile -ExitCode $exitCode -TerminationReason $terminationReason -StdOut $stdout -StdErr $stderr
-
-        # Report success/failure
-        if ($timedOut) {
-            Update-Status "TIMEOUT: $jobName" $UI_Color_StatusError
-            return $false
-        } elseif ($exitCode -eq 0) {
-            Write-OutputWithTimestamp "Job completed successfully (exit code 0)"
-            Update-Status "Success: $jobName" $UI_Color_StatusOk
-            return $true
-        } else {
-            Write-OutputWithTimestamp "Job failed with exit code: $exitCode" -IsError $true
-            Update-Status "Failed: $jobName (exit $exitCode)" $UI_Color_StatusError
-            return $false
+        # Set UI properties for completion or failure
+        if ($result.Success) {
+            $result.IsError = $false
+            $result.StatusMessage = "Success: $jobName"
+            $result.LauncherMessage = "Job completed successfully (exit code 0)"
+        } elseif (-not $result.TimedOut) {
+            $result.IsError = $true
+            $result.StatusMessage = "Failed: $jobName (exit $($result.ExitCode))"
+            $result.LauncherMessage = "Job failed with exit code: $($result.ExitCode)"
         }
     }
     catch {
-        $script:KillRequested = $false
-        $errorMsg = "Exception during job execution: $($_.Exception.Message)"
-        Write-OutputWithTimestamp $errorMsg -IsError $true
-        Update-Status "Error: $jobName" $UI_Color_StatusError
-
-        # Attempt to kill if process is still running
-        if ($process -and (-not $process.HasExited)) {
-            try { $process.Kill() } catch { }
+        # Exception occurred - set result state
+        if ([string]::IsNullOrWhiteSpace($result.TerminationReason)) {
+            $result.TerminationReason = "Exception"
         }
-
-        $exitCode = if ($process.ExitCode -ne $null) { $process.ExitCode } else { -1 }
-
-        # Write log file
-        Finalize-JobLog -Path $logFile -ExitCode $exitCode -TerminationReason "Exception" -GeneralOutput $errorMsg
-        return $false
+        if ([string]::IsNullOrWhiteSpace($result.GeneralOutput)) {
+            $result.GeneralOutput = "Exception during job execution: $($_.Exception.Message)"
+        }
+        if ($result.ExitCode -eq $null) {
+            $result.ExitCode = -1
+        }
+        $result.Success = $false
+        $result.IsError = $true
+        $result.StatusMessage = "Error: $jobName"
+        $result.LauncherMessage = $result.GeneralOutput
     }
     finally {
-        $process.Dispose()
-        $script:KillRequested = $false
-        $script:CurrentRunningJob = $null
+        Cleanup-Job -Result $result -Process $process
     }
+
+    return $result.Success
 }
 
 <#
