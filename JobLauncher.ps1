@@ -121,6 +121,11 @@ $script:JobButtons = @{}                    # Dictionary mapping job name to but
 $script:KillButton = $null                  # Reference to Kill button
 $script:ThemeCombo = $null                  # Theme dropdown
 $script:MainForm = $null                    # Reference to main window
+$script:ListItems = $null                   # Collection of all categories/groups from parsed JSON config.
+                                            # Each item has .Type ("category" or "group"), .Label (display name),
+                                            # .Node (original JSON object), and .Parent (for groups only).
+                                            # Used as the data source for BOTH TreeView (hierarchical) and
+                                            # ListBox (flat) left panel views. Not to be confused with ListBox control.
 
 # =============================================================================
 # JSON LOADING
