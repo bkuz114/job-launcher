@@ -1383,7 +1383,7 @@ function Invoke-Job {
         # Record running job state
         $script:CurrentRunningJob = @{
             Process = $process
-            JobName = $rawJob.name
+            JobName = $jobName
             Button = $JobButton
             StartTime = Get-Date
             LogPath = $logFile
