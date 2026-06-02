@@ -761,6 +761,23 @@ END OF LOG
     $footer | Out-File -FilePath $Path -Encoding UTF8 -Append
 }
 
+<#
+.SYNOPSIS
+    Writes a timestamped message to the output textbox with optional error formatting.
+
+.DESCRIPTION
+    Appends a message to the script's global output RichTextBox control.
+    Adds a timestamp prefix (if $ShowTimestampsInOutput is $true) and an
+    "ERROR: " prefix (if $IsError is $true). Automatically scrolls to the
+    bottom after appending.
+
+.PARAMETER Text
+    The message text to write to the output box.
+
+.PARAMETER IsError
+    If $true, prefixes the message with "ERROR: " for visual distinction.
+    Defaults to $false.
+#>
 function Write-OutputWithTimestamp {
     param([string]$Text, [bool]$IsError = $false)
 
@@ -776,6 +793,23 @@ function Write-OutputWithTimestamp {
     $script:OutputTextBox.ScrollToCaret()
 }
 
+<#
+.SYNOPSIS
+    Updates the status label text and color in the main window's status strip.
+
+.DESCRIPTION
+    Sets the Text and ForeColor properties of the global $script:StatusLabel
+    control. This label resides in the StatusStrip at the bottom of the main
+    form and provides real-time feedback to the user (e.g., "Ready", "Running",
+    "Success", "Failed").
+
+.PARAMETER Text
+    The status message to display.
+
+.PARAMETER Color
+    A System.Drawing.Color object specifying the text color. Common values
+    are obtained via Get-ThemeColor (e.g., status_ok, status_error).
+#>
 function Update-Status {
     param([string]$Text, [System.Drawing.Color]$Color)
 
@@ -1286,6 +1320,26 @@ function Invoke-Job {
     }
 }
 
+<#
+.SYNOPSIS
+    Terminates the currently running job and cleans up UI state.
+
+.DESCRIPTION
+    Called when the user clicks the Kill button. Sets $script:KillRequested = $true
+    to signal the running job's wait loop to exit, then proceeds to kill the
+    process tree (or main process) using taskkill or .Kill().
+    Prompts for confirmation if $ConfirmKillJob is $true.
+    Captures any remaining output, finalizes the job log with "KilledByUser"
+    reason, and resets UI button states.
+
+.PARAMETER None
+    This function has no parameters. It operates entirely on global script state
+    ($script:CurrentRunningJob, $script:KillRequested, etc.).
+
+.NOTES
+    Depends on $KillProcessTree and $KillTimeoutGraceSeconds user settings.
+    If no job is running, the function returns immediately with a warning message.
+#>
 function Stop-CurrentJob {
     $UI_Color_Background = Get-ThemeColor -PropertyName "form_background" 
 
@@ -1825,6 +1879,30 @@ function Set-ToggleButton {
     $Button.Tag = $State
 }
 
+<#
+.SYNOPSIS
+    Creates and displays job buttons for a selected group in the right panel.
+
+.DESCRIPTION
+    Clears all existing job buttons from the button panel, then iterates through
+    the jobs array of the provided group object. For each job, creates a new
+    Button control configured with the job's name, hover effects, and a click
+    handler that runs Invoke-Job. Stores each button in $script:JobButtons
+    hashtable keyed by job name for later state updates (enabling/disabling,
+    color changes).
+
+.PARAMETER Group
+    A PSObject representing a group from the JSON configuration. Must contain
+    a "jobs" property (array) where each job has "name" and "command" properties.
+    This is typically $Item.Node when the selected item is of Type "group".
+
+.EXAMPLE
+    Update-ButtonsForGroup -Group $selectedGroup.Node
+
+.NOTES
+    Called by Set-Item when a new group is selected. The button panel reference
+    is stored in $script:FormControls.ButtonPanel.
+#>
 function Update-ButtonsForGroup {
     param(
         [Parameter(Mandatory = $true)]
@@ -2741,6 +2819,39 @@ function Initialize-Toolbar {
     return $toolbar
 }
 
+<#
+.SYNOPSIS
+    Creates and configures all main UI controls for the Job Launcher window.
+
+.DESCRIPTION
+    Constructs the main form, root TableLayoutPanel (toolbar + content panel),
+    SplitContainer (left group list + right job/output panels), button flow panel,
+    output RichTextBox, and status strip. Stores references to critical controls
+    in script-scoped variables ($script:OutputTextBox, $script:StatusLabel,
+    $script:MainForm, $script:ButtonPanel).
+
+    Returns a hashtable containing references to key controls (SplitContainer,
+    Form, LeftPanel, ButtonPanel, RightPanel, Toolbar) for later use by
+    Populate-GUI and theme application functions.
+
+.OUTPUTS
+    [hashtable] - Contains the following keys:
+        - SplitContainer: The vertical SplitContainer control
+        - Form: The main System.Windows.Forms.Form
+        - LeftPanel: Panel for group list (TreeView or ListBox)
+        - ButtonPanel: FlowLayoutPanel that holds job buttons
+        - RightPanel: TableLayoutPanel containing button panel and output box
+        - Toolbar: TableLayoutPanel with theme selector and kill button
+
+.EXAMPLE
+    $script:FormControls = Build-GUI
+
+.NOTES
+    Does NOT populate the left panel with groups or categories — that is
+    handled separately by Populate-GUI after this function returns.
+    Uses user-configurable settings ($UI_Window_Width, $UI_Output_Height, etc.)
+    defined at the top of the script.
+#>
 function Build-GUI {
     # --- Main Form ---
     $form = New-Object System.Windows.Forms.Form
