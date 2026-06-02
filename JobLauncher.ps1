@@ -1373,6 +1373,13 @@ function Invoke-Job {
     try {
         $process.Start() | Out-Null
 
+        # job pid
+        $jobPid = $process.Id
+
+        # === Append PID to job log ==
+        Append-JobLog -Path $logFile -Content $jobPid -HeaderSummary "Process PID (ignore if detached)"
+        Write-OutputWithTimestamp "Job PID: $jobPid"
+
         # Record running job state
         $script:CurrentRunningJob = @{
             Process = $process
@@ -1412,7 +1419,7 @@ function Invoke-Job {
 
             if ($KillProcessTree) {
                 # taskkill /T kills the process tree
-                $killProcess = Start-Process -FilePath "taskkill.exe" -ArgumentList "/T /F /PID $($process.Id)" -NoNewWindow -Wait -PassThru
+                $killProcess = Start-Process -FilePath "taskkill.exe" -ArgumentList "/T /F /PID $jobPid" -NoNewWindow -Wait -PassThru
                 Start-Sleep -Seconds $KillTimeoutGraceSeconds
             } else {
                 $process.Kill()
