@@ -121,11 +121,11 @@ $script:JobButtons = @{}                    # Dictionary mapping job name to but
 $script:KillButton = $null                  # Reference to Kill button
 $script:ThemeCombo = $null                  # Theme dropdown
 $script:MainForm = $null                    # Reference to main window
-$script:ListItems = $null                   # Collection of all categories/groups from parsed JSON config.
+$script:NavigationItems = $null             # Collection of all categories/groups from parsed JSON config.
                                             # Each item has .Type ("category" or "group"), .Label (display name),
                                             # .Node (original JSON object), and .Parent (for groups only).
                                             # Used as the data source for BOTH TreeView (hierarchical) and
-                                            # ListBox (flat) left panel views. Not to be confused with ListBox control.
+                                            # ListBox (flat) left panel views.
 
 # =============================================================================
 # JSON LOADING
@@ -139,7 +139,7 @@ $script:ListItems = $null                   # Collection of all categories/group
     Processes the JSON configuration when it contains a "categories" array.
     Each category contains a "groups" array, and each group contains a "jobs" array.
 
-    Builds $script:ListItems with two item types:
+    Builds $script:NavigationItems with two item types:
     - Type "category" for category headers (non-selectable, visual separation)
     - Type "group" for selectable groups (stores original group object in .Node)
 
@@ -152,7 +152,7 @@ $script:ListItems = $null                   # Collection of all categories/group
     Load-HierarchicalConfig -Config $config
 
 .NOTES
-    Sets $script:ListItems. Caller is responsible for setting $script:HasCategories = $true.
+    Sets $script:NavigationItems. Caller is responsible for setting $script:HasCategories = $true.
     Does NOT set $script:Settings – that is handled separately in Load-Configuration.
 #>
 function Load-HierarchicalConfig {
@@ -164,7 +164,7 @@ function Load-HierarchicalConfig {
     if (-not $config.categories) { throw "Missing 'categories' array" }
     if ($config.categories.Count -eq 0) { throw "No categories defined" }
 
-    $script:ListItems = @()
+    $script:NavigationItems = @()
 
     foreach ($category in $config.categories) {
         # Validate category has name
@@ -178,7 +178,7 @@ function Load-HierarchicalConfig {
             Node = $category
         }
         $categoryItem | Add-Member -MemberType ScriptMethod -Name ToString -Value { $this.Label } -Force
-        $script:ListItems += $categoryItem
+        $script:NavigationItems += $categoryItem
 
         # Validate each group has name and jobs
         foreach ($group in $category.groups) {
@@ -200,7 +200,7 @@ function Load-HierarchicalConfig {
                 Parent = $category  # add parent category to retrieve theme from
             }
             $groupItem | Add-Member -MemberType ScriptMethod -Name ToString -Value { $this.Label } -Force
-            $script:ListItems += $groupItem
+            $script:NavigationItems += $groupItem
         }
     }
 }
@@ -213,7 +213,7 @@ function Load-HierarchicalConfig {
     Processes the JSON configuration when it contains a "groups" array (and no "categories").
     Validates each group has a name, a non-empty jobs array, and each job has a name and command.
 
-    Stores the validated groups in $script:ListItems for use by Populate-FlatList.
+    Stores the validated groups in $script:NavigationItems for use by Populate-FlatList.
 
 .PARAMETER Config
     The PSCustomObject from ConvertFrom-Json containing the full configuration.
@@ -222,7 +222,7 @@ function Load-HierarchicalConfig {
     Load-FlatConfig -Config $config
 
 .NOTES
-    Sets $script:ListItems. Caller is responsible for setting $script:HasCategories = $false.
+    Sets $script:NavigationItems. Caller is responsible for setting $script:HasCategories = $false.
     Does NOT set $script:Settings – that is handled separately in Load-Configuration.
 #>
 function Load-FlatConfig {
@@ -234,7 +234,7 @@ function Load-FlatConfig {
     if (-not $config.groups) { throw "Missing 'groups' array" }
     if ($config.groups.Count -eq 0) { throw "No groups defined in configuration" }
 
-    $script:ListItems = @()
+    $script:NavigationItems = @()
 
     # Validate each group has name and jobs
     foreach ($group in $config.groups) {
@@ -263,7 +263,7 @@ function Load-FlatConfig {
         # so that the ListBox data structure will be uniform across both hierarchical and flat case
         # (instead of strings in one, and objects in another)
         $groupItem | Add-Member -MemberType ScriptMethod -Name ToString -Value { $this.Label } -Force
-        $script:ListItems += $groupItem
+        $script:NavigationItems += $groupItem
     }
 }
 
@@ -291,7 +291,7 @@ function Load-FlatConfig {
     On success, sets:
     - $script:Settings from config.settings
     - $script:HasCategories = $true (if categories used) or $false (if groups used)
-    - $script:ListItems
+    - $script:NavigationItems
 
     On failure, shows a MessageBox error and returns $false.
     Does NOT exit the script – caller should handle the failure.
@@ -1710,7 +1710,7 @@ function Initialize-Theme {
     verify that the theme name exists in $Script:Themes.
 
 .PARAMETER Item
-    The target item. One of the Hashtable in $script:ListItems set by Load-Config (which parses JSON)
+    The target item. One of the Hashtable in $script:NavigationItems set by Load-Config (which parses JSON)
     Contains .Type, .Label, .Parent (if from a "group" node in JSON), and .Node. .Node is the
     PSObject for the JSON node, which contains .name, .jobs (if Group), .groups (if Category),
     and optionally .theme.
@@ -1720,7 +1720,7 @@ function Initialize-Theme {
     $themeName = Get-ItemTheme -Item $selectedCategory
 
 .NOTES
-    - $Item should be one of the hashtables in $script:ListItems (populated by Load-Config,
+    - $Item should be one of the hashtables in $script:NavigationItems (populated by Load-Config,
       which parses JSON and creates hashtables for each category or group node found)
       These hashtables have .Node property, which is the PSObject for the JSON data for
       that node. Group nodes also have a .Parent property, which is the PSObject for the JSON
@@ -2076,7 +2076,7 @@ function Measure-ListBoxMaxWidth {
 
 .NOTES
     Called by Populate-GUI when $script:HasCategories = $false.
-    Requires $script:ListItems to be populated (by Load-FlatConfig).
+    Requires $script:NavigationItems to be populated (by Load-FlatConfig).
     Requires $script:FormControls.LeftPanel to exist (created in Build-GUI).
 #>
 function Populate-FlatList {
@@ -2090,7 +2090,7 @@ function Populate-FlatList {
 
     # Populate ListBox
     $script:FormControls.ListBox.Items.Clear()
-    foreach ($group in $script:ListItems) {
+    foreach ($group in $script:NavigationItems) {
         # You can add the $group objects directly as added a custom
         # toString() function on them which makes .Label the string
         # representation of the object. Doing this because when I used
@@ -2121,7 +2121,7 @@ function Populate-FlatList {
     Populates the TreeView with categories and groups from the loaded configuration.
 
 .DESCRIPTION
-    Reads $script:ListItems (built by Load-Configuration) and builds a TreeView
+    Reads $script:NavigationItems (built by Load-Configuration) and builds a TreeView
     where each category is a parent node and each group is a child node.
     Category nodes have Tag = $null (not selectable). Group nodes have Tag = $group
     object (used by Set-Item). Expands all categories by default, auto-sizes the
@@ -2146,8 +2146,8 @@ function Populate-TreeView {
     $null = $script:FormControls.LeftPanel.Controls.Add($treeView)
     $script:FormControls.TreeView = $treeView
 
-    # Build TreeView nodes from $script:ListItems
-    foreach ($item in $script:ListItems) {
+    # Build TreeView nodes from $script:NavigationItems
+    foreach ($item in $script:NavigationItems) {
         if ($item.Type -eq "category") {
             # Create category node (parent)
             $categoryNode = New-Object System.Windows.Forms.TreeNode($item.Label)
@@ -2194,7 +2194,7 @@ function Populate-TreeView {
     Populates the ListBox with category dividers and groups from the loaded configuration.
 
 .DESCRIPTION
-    Reads $script:ListItems (built by Load-Configuration) and builds an owner-draw
+    Reads $script:NavigationItems (built by Load-Configuration) and builds an owner-draw
     ListBox where category dividers appear as bold, centered, non-selectable items
     and groups appear as standard selectable items. Uses custom drawing for
     dividers and dynamic theme colors for groups.
@@ -2224,8 +2224,8 @@ function Populate-ListWithDividers {
     $null = $script:FormControls.LeftPanel.Controls.Add($listBox)
     $script:FormControls.ListBox = $listBox
 
-    # Populate items from $script:ListItems
-    foreach ($item in $script:ListItems) {
+    # Populate items from $script:NavigationItems
+    foreach ($item in $script:NavigationItems) {
         $null = $listBox.Items.Add($item)
     }
 
@@ -2527,7 +2527,7 @@ function Update-KillButton {
     and allows theme to be reapplied without rebuilding buttons if needed.
 
 .PARAMETER Item
-    The target item. One of the Hashtable in $script:ListItems set by Load-Config (which parses JSON)
+    The target item. One of the Hashtable in $script:NavigationItems set by Load-Config (which parses JSON)
     Contains .Type, .Label, Parent (if from a "group" node in JSON), and .Node. .Node is the
     PSObject for the JSON node, which contains .name, .jobs (if Group), .groups (if Category),
     and optionally .theme.
@@ -2540,7 +2540,7 @@ function Update-KillButton {
     - Currently nothing happening in Category case other than theme set, 
       but lumping in with Groups in Set-Item in case there is other unified
       logic that needs to happen for both.
-    - $Item should be one of the hashtables in $script:ListItems (populated by Load-Config,
+    - $Item should be one of the hashtables in $script:NavigationItems (populated by Load-Config,
       which parses JSON and creates hashtables for each category or group node found)
       These hashtables have .Node property, which is the PSObject for the JSON data for
       that node. Group nodes also have a .Parent property, which is the PSObject for the JSON
@@ -2985,7 +2985,7 @@ function Build-GUI {
     Reads the "view" setting from JSON (defaults to "flat") and dispatches to
     either Populate-ListView (flat groups) or Populate-TreeView (collapsible
     categories). Both views share the same underlying data structure
-    ($script:ListItems) built by Load-Configuration.
+    ($script:NavigationItems) built by Load-Configuration.
 
 .NOTES
     "view": "flat"   – Uses ListBox with category dividers (original behavior)
