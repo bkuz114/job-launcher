@@ -1288,7 +1288,6 @@ function Get-JobWorkingDirectory {
     - TerminationReason (string)
     - StdOut (string)
     - StdErr (string)
-    - GeneralOutput (string)
     - TimedOut (bool)
     - IsError (bool)
     - StatusMessage (string)
@@ -1332,7 +1331,7 @@ function Cleanup-Job {
 
     # === Write log file ===
     if ($Result.LogFile) {
-        Finalize-JobLog -Path $Result.LogFile -ExitCode $Result.ExitCode -TerminationReason $Result.TerminationReason -StdOut $Result.StdOut -StdErr $Result.StdErr -GeneralOutput $Result.GeneralOutput
+        Finalize-JobLog -Path $Result.LogFile -ExitCode $Result.ExitCode -TerminationReason $Result.TerminationReason -StdOut $Result.StdOut -StdErr $Result.StdErr -GeneralOutput $Result.LauncherMessage
     }
 
     # === Display output if present ===
@@ -1461,7 +1460,7 @@ function Invoke-Job {
     #   StdOut/StdErr → captured after process exit
     #   ExitCode → from process or timeout
     #   TerminationReason → "Timeout", "Completed", "Exception", etc.
-    #   GeneralOutput → high-level status messages (kill, timeout, exceptions)
+    #   LauncherMessage → high-level status messages (kill, timeout, exceptions)
     #   StatusMessage/LauncherMessage → displayed in UI
     $result = [PSCustomObject]@{
         Success = $false
@@ -1469,11 +1468,10 @@ function Invoke-Job {
         TerminationReason = ""
         StdOut = $null
         StdErr = $null
-        GeneralOutput = $null
         TimedOut = $false
         IsError = $true
         StatusMessage = ""
-        LauncherMessage = ""
+        LauncherMessage = $null
         JobName = $jobName
         JobCommand = $jobCommand
         WorkingDirectory = $workingDir
@@ -1490,7 +1488,6 @@ function Invoke-Job {
     if (-not (Test-Path -Path $workingDir -PathType Container)) {
         $errorMsg = "Working directory does not exist: $workingDir"
         $result.TerminationReason = "Working Directory Failure"
-        $result.GeneralOutput = $errorMsg
         $result.ExitCode = -1
         $result.Success = $false
         $result.IsError = $true
@@ -1537,7 +1534,7 @@ function Invoke-Job {
 
             # Check if kill button was clicked
             if ($script:KillRequested) {
-                $result.GeneralOutput = "Kill requested, stopping job"
+                $result.LauncherMessage = "Kill requested, stopping job"
                 break
             }
 
@@ -1554,7 +1551,7 @@ function Invoke-Job {
             $result.TerminationReason = "Timeout"
             $result.IsError = $true
             $result.StatusMessage = "TIMEOUT: $jobName"
-            $result.GeneralOutput = "TIMEOUT: Job exceeded $timeoutSeconds seconds"
+            $result.LauncherMessage = "TIMEOUT: Job exceeded $timeoutSeconds seconds"
         }
 
         # === Capture output (must happen after process exits) ===
@@ -1598,8 +1595,8 @@ function Invoke-Job {
         if ([string]::IsNullOrWhiteSpace($result.TerminationReason)) {
             $result.TerminationReason = "Exception"
         }
-        if ([string]::IsNullOrWhiteSpace($result.GeneralOutput)) {
-            $result.GeneralOutput = "Exception during job execution: $($_.Exception.Message)"
+        if ([string]::IsNullOrWhiteSpace($result.LauncherMessage)) {
+            $result.LauncherMessage = "Exception during job execution: $($_.Exception.Message)"
         }
         if ($result.ExitCode -eq $null) {
             $result.ExitCode = -1
@@ -1607,7 +1604,6 @@ function Invoke-Job {
         $result.Success = $false
         $result.IsError = $true
         $result.StatusMessage = "Error: $jobName"
-        $result.LauncherMessage = $result.GeneralOutput
     }
     finally {
         Cleanup-Job -Result $result -Process $process
