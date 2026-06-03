@@ -1570,7 +1570,7 @@ function Invoke-Job {
         # If timeout already set exit code, otherwise get from process
         if (-not $result.TimedOut) {
             $result.ExitCode = if ($process.HasExited) { $process.ExitCode } else { -2 }
-            $result.TerminationReason = "Completed"
+            if (!$result.TerminationReason) { $result.TerminationReason = "Completed" }
         }
 
         # Determine success/failure for result object
@@ -1592,7 +1592,7 @@ function Invoke-Job {
     catch {
         # Exception occurred - set result state
         if ([string]::IsNullOrWhiteSpace($result.TerminationReason)) {
-            $result.TerminationReason = "Exception"
+            if (!$result.TerminationReason) { $result.TerminationReason = "Exception" }
         }
         if ([string]::IsNullOrWhiteSpace($result.LauncherMessage)) {
             $result.LauncherMessage = "Exception during job execution: $($_.Exception.Message)"
@@ -1692,6 +1692,10 @@ function Stop-CurrentJob {
         # Write to log file if present
         if ($script:CurrentRunningJob.ContainsKey('LogPath')) {
             Append-JobLog -Path $logFile -Content "Killed by user at $(Get-Date -Format 'HH:mm:ss')"
+        }
+        # Update termination reason for result in cleanup
+        if ($script:CurrentRunningJob.ContainsKey('Result')) {
+            $script:CurrentRunningJob.Result.TerminationReason = "KillRequested"
         }
     }
     catch {
