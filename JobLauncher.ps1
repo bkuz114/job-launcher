@@ -10,6 +10,9 @@
 # IMPORTS AND SETUP - MUST LOAD ASSEMBLIES BEFORE COLOR REFERENCES
 # =============================================================================
 
+# File for streaming stdout / stderr in output area
+. (Join-Path $PSScriptRoot "JobOutputStreamReader.ps1")
+
 # Required assemblies for GUI and process management
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -86,6 +89,7 @@ $FlashButtonOnComplete = $true
 $FlashDurationMs = 300
 $ShowFullCommandInOutput = $true
 $ShowTimestampsInOutput = $true
+$EnableRealTimeOutput = $true # real-time output streaming (experimental)
 
 # --- Process Execution ---
 $KillProcessTree = $true
@@ -1343,24 +1347,27 @@ function Cleanup-Job {
         Finalize-JobLog -Path $Result.LogFile -ExitCode $Result.ExitCode -TerminationReason $Result.TerminationReason -StdOut $Result.StdOut -StdErr $Result.StdErr
     }
 
-    # === Display output if present ===
-    $hasStdOut = (-not [string]::IsNullOrWhiteSpace($Result.StdOut))
-    $hasStdErr = (-not [string]::IsNullOrWhiteSpace($Result.StdErr))
+    # === Display output if present (and not already streamed) ===
 
-    Write-OutputWithTimestamp "--- Job Output ---"
+    if (-not $Result.RealTimeOutput) {
+        $hasStdOut = (-not [string]::IsNullOrWhiteSpace($Result.StdOut))
+        $hasStdErr = (-not [string]::IsNullOrWhiteSpace($Result.StdErr))
 
-    if ($hasStdOut -or $hasStdErr) {
-        if ($hasStdOut) {
-            Write-OutputWithTimestamp "[StdOut]"
-            Write-OutputWithTimestamp $Result.StdOut.TrimEnd()
+        Write-OutputWithTimestamp "--- Job Output ---"
+
+        if ($hasStdOut -or $hasStdErr) {
+            if ($hasStdOut) {
+                Write-OutputWithTimestamp "[StdOut]"
+                Write-OutputWithTimestamp $Result.StdOut.TrimEnd()
+            }
+
+            if ($hasStdErr) {
+                Write-OutputWithTimestamp "[StdErr]" -IsError $true
+                Write-OutputWithTimestamp $Result.StdErr.TrimEnd() -IsError $true
+            }
+        } else {
+            Write-OutputWithTimestamp "[No output captured]"
         }
-
-        if ($hasStdErr) {
-            Write-OutputWithTimestamp "[StdErr]" -IsError $true
-            Write-OutputWithTimestamp $Result.StdErr.TrimEnd() -IsError $true
-        }
-    } else {
-        Write-OutputWithTimestamp "[No output captured]"
     }
 
     # === Update UI status and output message ===
@@ -1477,6 +1484,7 @@ function Invoke-Job {
         TerminationReason = ""
         StdOut = $null
         StdErr = $null
+        RealTimeOutput = $false # if real-time stdout/stderr enabled for this job
         TimedOut = $false
         IsError = $true
         StatusMessage = ""
@@ -1491,6 +1499,10 @@ function Invoke-Job {
     # === Initialize process variable ===
 
     $process = $null
+
+    # === Real-time output streaming ===
+    $outputQueue = $null
+    $streamReader = $null
 
     # === Validate working directory ===
 
@@ -1526,6 +1538,14 @@ function Invoke-Job {
     try {
         $process.Start() | Out-Null
 
+        # === Start real-time output streaming ===
+        if ($EnableRealTimeOutput -and $process.StartInfo.RedirectStandardOutput) {
+            $outputQueue = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
+            $streamReader = Start-JobOutputStreamReader -Process $process -OutputQueue $outputQueue
+            $result.RealTimeOutput = $true
+            Write-OutputWithTimestamp "Real-time output streaming enabled"
+        }
+
         # job pid
         $jobPid = $process.Id
 
@@ -1550,6 +1570,12 @@ function Invoke-Job {
         while ($elapsedMs -lt $totalWaitMs) {
             if ($process.HasExited) { break }
 
+            # === Process real-time output ===
+            if ($streamReader -and $outputQueue) {
+                # -WriteToUI will write next batch of output to console area
+                Process-JobOutputQueue -OutputQueue $outputQueue -ResultObject $result -WriteToUI $true
+            }
+
             # Let Windows process pending UI events (clicks, resizing, etc.)
             [System.Windows.Forms.Application]::DoEvents()
 
@@ -1572,6 +1598,11 @@ function Invoke-Job {
             $result.StatusMessage = "TIMEOUT: $jobName"
             $result.LauncherMessage = "TIMEOUT: Job exceeded $timeoutSeconds seconds"
             Append-JobLog -Path $Result.logFile -Content $Result.LauncherMessage
+        }
+
+        # === Final drain of output queue ===
+        if ($streamReader -and $outputQueue) {
+            Process-JobOutputQueue -OutputQueue $outputQueue -ResultObject $result -WriteToUI $true
         }
 
         # Determine success/failure for result object
@@ -1609,6 +1640,9 @@ function Invoke-Job {
         $result.StatusMessage = "Error: $jobName"
     }
     finally {
+        if ($streamReader) {
+            Stop-JobOutputStreamReader -ReaderHandle $streamReader
+        }
         Cleanup-Job -Result $result -Process $process
     }
 
