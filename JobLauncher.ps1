@@ -1705,8 +1705,8 @@ function Stop-CurrentJob {
         $combined = if ($stderr) { "$stdout`r`n$stderr" } else { $stdout }
 
         # Write to log file if present
-        if ($script:CurrentRunningJob.ContainsKey('LogPath')) { 
-            Finalize-JobLog -Path $logFile -ExitCode -1 -TerminationReason "KilledByUser" -GeneralOutput "Killed by user at $(Get-Date -Format 'HH:mm:ss')`r`n$combined"
+        if ($script:CurrentRunningJob.ContainsKey('LogPath')) {
+            Append-JobLog -Path $logFile -Content "Killed by user at $(Get-Date -Format 'HH:mm:ss')`r`n$combined"
         }
     }
     catch {
