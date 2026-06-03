@@ -1540,7 +1540,11 @@ function Invoke-Job {
             $elapsedMs += $TimeoutPollIntervalMs
         }
 
-        if (-not $process.HasExited) {
+        # === Check for completion or timeout ==
+        if ($process.HasExited) {
+            $result.ExitCode = $process.ExitCode
+            if (!$result.TerminationReason) { $result.TerminationReason = "Completed" }
+        } else {
             # Timeout reached - kill process
             $result.TimedOut = $true
             $result.ExitCode = -1
@@ -1551,14 +1555,8 @@ function Invoke-Job {
             Append-JobLog -Path $Result.logFile -Content $Result.LauncherMessage
         }
 
-        # If timeout already set exit code, otherwise get from process
-        if (-not $result.TimedOut) {
-            $result.ExitCode = if ($process.HasExited) { $process.ExitCode } else { -2 }
-            if (!$result.TerminationReason) { $result.TerminationReason = "Completed" }
-        }
-
         # Determine success/failure for result object
-        $result.Success = (-not $result.TimedOut) -and ($result.ExitCode -eq 0)
+        $result.Success = ($result.ExitCode -eq 0)
 
         # Set UI properties for completion or failure
         if ($result.Success) {
