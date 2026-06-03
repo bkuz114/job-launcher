@@ -735,8 +735,6 @@ function Append-JobLog {
     The exit code returned by the job process. Mandatory parameter.
 .PARAMETER TerminationReason
     The reason the job terminated (e.g., "Completed", "Timeout", "Error"). Mandatory parameter.
-.PARAMETER GeneralOutput
-    Optional general message to include in the output section. Default is $null.
 .PARAMETER StdOut
     Optional STDOUT content from the job process. Default is $null.
 .PARAMETER StdErr
@@ -744,9 +742,9 @@ function Append-JobLog {
 .EXAMPLE
     Finalize-JobLog -Path $logPath -ExitCode 0 -TerminationReason "Completed" -StdOut $outputData
 .EXAMPLE
-    Finalize-JobLog -Path $logPath -ExitCode 1 -TerminationReason "Timeout" -GeneralOutput "Job exceeded timeout"
+    Finalize-JobLog -Path $logPath -ExitCode 1 -TerminationReason "Timeout"
 .NOTES
-    Parameters GeneralOutput, StdOut, and StdErr default to $null.
+    Parameters StdOut, and StdErr default to $null.
     Only non-null values are appended to the log.
 #>
 function Finalize-JobLog {
@@ -760,7 +758,6 @@ function Finalize-JobLog {
         [Parameter(Mandatory = $true)]
         [string]$TerminationReason,
 
-        $GeneralOutput = $null,
         $StdOut = $null,
         $StdErr = $null
     )
@@ -774,10 +771,6 @@ Exit Code:         $ExitCode
 Exit Reason:       $TerminationReason
 ================================================================================
 "@
-
-    if ($GeneralOutput -ne $null) {
-        $footer += "`r`nGeneral message set in script:`r`n$GeneralOutput"
-    }
 
     if ($StdOut -ne $null) {
         $footer += "`r`nSTDOUT:`r`n$StdOut"
@@ -1331,7 +1324,7 @@ function Cleanup-Job {
 
     # === Write log file ===
     if ($Result.LogFile) {
-        Finalize-JobLog -Path $Result.LogFile -ExitCode $Result.ExitCode -TerminationReason $Result.TerminationReason -StdOut $Result.StdOut -StdErr $Result.StdErr -GeneralOutput $Result.LauncherMessage
+        Finalize-JobLog -Path $Result.LogFile -ExitCode $Result.ExitCode -TerminationReason $Result.TerminationReason -StdOut $Result.StdOut -StdErr $Result.StdErr
     }
 
     # === Display output if present ===
@@ -1471,7 +1464,7 @@ function Invoke-Job {
         TimedOut = $false
         IsError = $true
         StatusMessage = ""
-        LauncherMessage = $null
+        LauncherMessage = ""
         JobName = $jobName
         JobCommand = $jobCommand
         WorkingDirectory = $workingDir
@@ -1493,6 +1486,18 @@ function Invoke-Job {
         $result.IsError = $true
         $result.StatusMessage = "Failed: Directory not found"
         $result.LauncherMessage = $errorMsg
+        ## FUTURE SELF:
+        #
+        # - I realize that every time you set a LauncherMessage you are manually calling Append-JobLog
+        # - Resist the urge to remove them all and shift to a singular call in Job-Cleanup
+        #   (making it always dispaly $Result.LauncherMessage if it was set).
+        # - The current approach:
+        #   1. makes log messages occur at exact second condition occurs (timestamp granularity)
+        #   2. eliminates missing log messages if cleanup doesn't execute
+        #   3. allows greater granulairty on what appears in logs (you can set LauncherMessage
+        #      -- which always appears in status + output area, but not have it show up in the final
+        #      log. Not currently being done, but might at some point.)
+        Append-JobLog -Path $Result.logFile -Content $Result.LauncherMessage
 
         Cleanup-Job -Result $result -Process $process
         return $false
@@ -1535,6 +1540,7 @@ function Invoke-Job {
             # Check if kill button was clicked
             if ($script:KillRequested) {
                 $result.LauncherMessage = "Kill requested, stopping job"
+                Append-JobLog -Path $Result.logFile -Content $Result.LauncherMessage
                 break
             }
 
@@ -1552,6 +1558,7 @@ function Invoke-Job {
             $result.IsError = $true
             $result.StatusMessage = "TIMEOUT: $jobName"
             $result.LauncherMessage = "TIMEOUT: Job exceeded $timeoutSeconds seconds"
+            Append-JobLog -Path $Result.logFile -Content $Result.LauncherMessage
         }
 
         # === Capture output (must happen after process exits) ===
@@ -1584,10 +1591,12 @@ function Invoke-Job {
             $result.IsError = $false
             $result.StatusMessage = "Success: $jobName"
             $result.LauncherMessage = "Job completed successfully (exit code 0)"
+            Append-JobLog -Path $Result.logFile -Content $Result.LauncherMessage
         } elseif (-not $result.TimedOut) {
             $result.IsError = $true
             $result.StatusMessage = "Failed: $jobName (exit $($result.ExitCode))"
             $result.LauncherMessage = "Job failed with exit code: $($result.ExitCode)"
+            Append-JobLog -Path $Result.logFile -Content $Result.LauncherMessage
         }
     }
     catch {
@@ -1597,6 +1606,7 @@ function Invoke-Job {
         }
         if ([string]::IsNullOrWhiteSpace($result.LauncherMessage)) {
             $result.LauncherMessage = "Exception during job execution: $($_.Exception.Message)"
+            Append-JobLog -Path $Result.logFile -Content $Result.LauncherMessage
         }
         if ($result.ExitCode -eq $null) {
             $result.ExitCode = -1
