@@ -1358,7 +1358,6 @@ function Cleanup-Job {
     if ($Process) {
         $Process.Dispose()
     }
-    $script:KillRequested = $false
     $script:CurrentRunningJob = $null
 }
 
@@ -1537,18 +1536,9 @@ function Invoke-Job {
             # Let Windows process pending UI events (clicks, resizing, etc.)
             [System.Windows.Forms.Application]::DoEvents()
 
-            # Check if kill button was clicked
-            if ($script:KillRequested) {
-                $result.LauncherMessage = "Kill requested, stopping job"
-                Append-JobLog -Path $Result.logFile -Content $Result.LauncherMessage
-                break
-            }
-
             Start-Sleep -Milliseconds $TimeoutPollIntervalMs
             $elapsedMs += $TimeoutPollIntervalMs
         }
-
-        $script:KillRequested = $false
 
         if (-not $process.HasExited) {
             # Timeout reached - kill process
