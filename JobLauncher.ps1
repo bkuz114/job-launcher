@@ -1693,20 +1693,9 @@ function Stop-CurrentJob {
 
         Write-OutputWithTimestamp "Job '$jobName' killed by user"
 
-        # Capture any remaining output
-        $stdout = ""
-        $stderr = ""
-        try {
-            $stdout = $process.StandardOutput.ReadToEnd()
-            $stderr = $process.StandardError.ReadToEnd()
-        } catch {
-            # Process may already be fully dead
-        }
-        $combined = if ($stderr) { "$stdout`r`n$stderr" } else { $stdout }
-
         # Write to log file if present
         if ($script:CurrentRunningJob.ContainsKey('LogPath')) {
-            Append-JobLog -Path $logFile -Content "Killed by user at $(Get-Date -Format 'HH:mm:ss')`r`n$combined"
+            Append-JobLog -Path $logFile -Content "Killed by user at $(Get-Date -Format 'HH:mm:ss')"
         }
     }
     catch {
