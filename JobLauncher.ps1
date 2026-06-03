@@ -1543,6 +1543,8 @@ function Invoke-Job {
         # === Check for completion or timeout ==
         if ($process.HasExited) {
             $result.ExitCode = $process.ExitCode
+            # only set TerminationReason if not set to avoid overwriting KillRequested
+            # reason set by Stop-CurrentJob
             if (!$result.TerminationReason) { $result.TerminationReason = "Completed" }
         } else {
             # Timeout reached - kill process
@@ -1574,6 +1576,8 @@ function Invoke-Job {
     catch {
         # Exception occurred - set result state
         if ([string]::IsNullOrWhiteSpace($result.TerminationReason)) {
+            # only set TerminationReason if not set to avoid overwriting KillRequested
+            # reason set by Stop-CurrentJob
             if (!$result.TerminationReason) { $result.TerminationReason = "Exception" }
         }
         if ([string]::IsNullOrWhiteSpace($result.LauncherMessage)) {
