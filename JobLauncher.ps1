@@ -1349,6 +1349,7 @@ function Cleanup-Job {
 
     # === Update UI status and output message ===
     if ($Result.LauncherMessage) {
+        Write-OutputWithTimestamp ""
         Write-OutputWithTimestamp "--- Execution Result ---"
         Write-OutputWithTimestamp $Result.LauncherMessage -IsError $Result.IsError
     }
