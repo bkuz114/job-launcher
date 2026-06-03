@@ -379,7 +379,7 @@ function Load-Configuration {
 
 .DESCRIPTION
     Creates a filename in the format: sanitized_jobname_YYYYMMDD_HHMMSS[-suffix].log
-    Sanitizes the job name by replacing invalid filesystem characters with underscores.
+    Sanitizes the job name by replacing non-alphanumeric characters with underscores.
     If a suffix is provided, it is appended before the .log extension.
 
 .PARAMETER JobName
@@ -392,6 +392,8 @@ function Load-Configuration {
 .EXAMPLE
     Generate-JobLogFilename -JobName "My Job" -> "My_Job_20250101_120000.log"
     Generate-JobLogFilename -JobName "My Job" -Suffix "detached" -> "My_Job_20250101_120000-detached.log"
+    Generate-JobLogFilename -JobName "My Job - (version B)" -> "My_Job_version_B_20250101_120000.log"
+    Generate-JobLogFilename -JobName "___" -> "20250101_120000.log"
 
 .NOTES
     Throws an error if JobName is null or empty.
@@ -407,14 +409,28 @@ function Generate-JobLogFilename {
         throw "Generate-JobLogFilename: JobName cannot be null or empty"
     }
 
-    # Sanitize job name for filename (replace invalid filesystem chars with underscore)
-    $safeName = $JobName -replace '[\\/:*?"<>|]', '_'
+    # Replace any non-alphanumeric character with underscore
+    $safeName = $JobName -replace '[^a-zA-Z0-9]', '_'
+
+    # Collapse multiple consecutive underscores into one
+    $safeName = $safeName -replace '_+', '_'
+
+    # Trim _ chars
+    $safeName = $safeName.Trim('_')
+
     $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 
-    if ($Suffix) {
-        return "$safeName`_$timestamp-$Suffix.log"
+    # Handle edge case where safeName is empty after trimming
+    if ([string]::IsNullOrEmpty($safeName)) {
+        $safeName = $timestamp
     } else {
-        return "$safeName`_$timestamp.log"
+        $safeName = "${safeName}_${timestamp}"
+    }
+
+    if ($Suffix) {
+        return "${safeName}-${Suffix}.log"
+    } else {
+        return "${safeName}.log"
     }
 }
 
