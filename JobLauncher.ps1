@@ -1551,22 +1551,6 @@ function Invoke-Job {
             Append-JobLog -Path $Result.logFile -Content $Result.LauncherMessage
         }
 
-        # === Capture output (must happen after process exits) ===
-
-        $stdout = ""
-        $stderr = ""
-
-        # $process.StandardOutput / Err might be null for detached jobs
-        if ($process.StandardOutput -ne $null) {
-            $stdout = $process.StandardOutput.ReadToEnd()
-        }
-        if ($process.StandardError -ne $null) {
-            $stderr = $process.StandardError.ReadToEnd()
-        }
-
-        $result.StdOut = $stdout
-        $result.StdErr = $stderr
-
         # If timeout already set exit code, otherwise get from process
         if (-not $result.TimedOut) {
             $result.ExitCode = if ($process.HasExited) { $process.ExitCode } else { -2 }
