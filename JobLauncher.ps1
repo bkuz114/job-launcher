@@ -3678,6 +3678,18 @@ function Get-PSObjectProperty {
         [string]$ErrorContext = $null
     )
 
+    # Validate Object is not $null
+    if ($Object -eq $null) {
+        $contextMsg = if ([string]::IsNullOrWhiteSpace($ErrorContext)) { "" } else { " [Context: $ErrorContext]" }
+        throw "Get-PSObjectProperty: Object cannot be null$contextMsg"
+    }
+
+    # Validate Property is not null or empty
+    if ([string]::IsNullOrWhiteSpace($Property)) {
+        $contextMsg = if ([string]::IsNullOrWhiteSpace($ErrorContext)) { "" } else { " [Context: $ErrorContext]" }
+        throw "Get-PSObjectProperty: Property name cannot be null or empty$contextMsg"
+    }
+
     $propertyExists = $Object.PSObject.Properties.Name -contains $Property
 
     if (-not $propertyExists) {
@@ -3760,6 +3772,18 @@ function Get-HashTableProperty {
         [Parameter(Mandatory = $false)]
         [string]$ErrorContext = $null
     )
+
+    # Validate Hashtable is not $null
+    if ($Hashtable -eq $null) {
+        $contextMsg = if ([string]::IsNullOrWhiteSpace($ErrorContext)) { "" } else { " [Context: $ErrorContext]" }
+        throw "Get-HashTableProperty: Hashtable cannot be null$contextMsg"
+    }
+
+    # Validate Key is not null or empty
+    if ([string]::IsNullOrWhiteSpace($Key)) {
+        $contextMsg = if ([string]::IsNullOrWhiteSpace($ErrorContext)) { "" } else { " [Context: $ErrorContext]" }
+        throw "Get-HashTableProperty: Key name cannot be null or empty$contextMsg"
+    }
 
     # Check if key exists
     $keyExists = $Hashtable.ContainsKey($Key)
