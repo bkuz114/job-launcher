@@ -3156,12 +3156,31 @@ function Initialize-ListBox {
     $listBox.Add_DrawItem({
         param($sender, $e)
 
+        # == colors to use in left panel == #
+
+        $listBackgroundColor = Get-ThemeColor -PropertyName "list_background" # bg color of actual left panel
+        $selectedItemBackgroundColor = Get-ThemeColor -PropertyName "list_background_selected" # highlighting color behind selected text
+        $textColor = Get-ThemeColor -PropertyName "list_text" # text color of group items in left panel
+        $selectedTextColor = Get-ThemeColor -PropertyName "list_text_selected" # text color of selected item
+
         $index = $e.Index
         if ($index -lt 0 -or $index -ge $sender.Items.Count) { return }
 
         $item = $sender.Items[$index]
         $bounds = $e.Bounds
         $e.DrawBackground()
+
+        # check if item is selected
+        $isSelected = ($e.State -band [System.Windows.Forms.DrawItemState]::Selected) -ne 0
+
+        # Create background color brush based on selection state
+        if ($isSelected) {
+            $bgBrush = New-Object System.Drawing.SolidBrush($selectedItemBackgroundColor)
+        } else {
+            $bgBrush = New-Object System.Drawing.SolidBrush($listBackgroundColor)
+        }
+        $e.Graphics.FillRectangle($bgBrush, $bounds)
+        $bgBrush.Dispose()
 
         if ($item.Type -eq "category") {
             # Divider styling
@@ -3181,10 +3200,7 @@ function Initialize-ListBox {
         } else {
 
             # Create brush based on selection state
-            $textColor = Get-ThemeColor -PropertyName "list_text"
-            $selectedTextColor = "White"
-
-            if (($e.State -band [System.Windows.Forms.DrawItemState]::Selected) -ne 0) {
+            if ($isSelected) {
                 $brush = New-Object System.Drawing.SolidBrush($selectedTextColor)
             } else {
                 $brush = New-Object System.Drawing.SolidBrush($textColor)
