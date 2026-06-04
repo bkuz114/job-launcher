@@ -3579,5 +3579,8 @@ function Main {
     Write-Host "DEBUG: Form closed"
 }
 
-# Run the application
-Main
+# Only run GUI if script is executed directly, not when dot-sourced
+if ($MyInvocation.InvocationName -ne '.') {
+    # Run the application
+    Main
+}
