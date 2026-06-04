@@ -1044,9 +1044,9 @@ function Get-JobResultProperty {
 
     # Validate Job is not $null
     if ($JobResult -eq $null) {
-        $contextMsg = if ($ErrorContext) { " [Context: Get-JobProperty -> $ErrorContext]" }
-                      else { " [Context: Get-JobProperty]" }
-        throw "Get-JobProperty: Job object cannot be null$contextMsg"
+        $contextMsg = if ($ErrorContext) { " [Context: Get-JobResultProperty -> $ErrorContext]" }
+                      else { " [Context: Get-JobResultProperty]" }
+        throw "Get-JobResultProperty: Job object cannot be null$contextMsg"
     }
 
     # Validate Property is not null or empty
