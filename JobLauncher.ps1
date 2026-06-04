@@ -3409,6 +3409,173 @@ function Populate-LeftPanel {
 
 <#
 .SYNOPSIS
+    Safely retrieves a property value from any object using PSObject property inspection.
+
+.DESCRIPTION
+    Retrieves a named property from an object without throwing if the property doesn't exist.
+    Uses PSObject.Properties to check existence before access. Works on PSCustomObject,
+    PSObject, regular .NET objects, and primitive types.
+
+.PARAMETER Object
+    The object from which to retrieve the property.
+
+.PARAMETER Property
+    The name of the property to retrieve.
+
+.PARAMETER Default
+    Value to return if the property does not exist. Defaults to $null.
+
+.PARAMETER FailIfMissing
+    If specified, throws a descriptive error when the property does not exist.
+    Overrides -Default.
+
+.PARAMETER ErrorContext
+    Optional caller-provided context string (e.g., function name) included in the error message.
+
+.EXAMPLE
+    $obj = [PSCustomObject]@{ Name = "Alice"; Age = 30 }
+    Get-PSObjectProperty -Object $obj -Property "Name"
+    Returns "Alice"
+
+.EXAMPLE
+    $obj = [PSCustomObject]@{ Name = "Alice" }
+    Get-PSObjectProperty -Object $obj -Property "Missing" -Default "Unknown"
+    Returns "Unknown" (property doesn't exist, so returns Default value)
+
+.EXAMPLE
+    $obj = [PSCustomObject]@{ Name = "Alice" }
+    Get-PSObjectProperty -Object $obj -Property "Missing" -FailIfMissing -ErrorContext "ValidateUser"
+    Throws: "Get-PSObjectProperty: Property 'Missing' not found on object of type 'System.Management.Automation.PSCustomObject' [Context: ValidateUser]"
+
+.EXAMPLE
+    $obj = Get-Process -Id $pid
+    Get-PSObjectProperty -Object $obj -Property "ProcessName"
+    Returns the process name string (e.g., "powershell" or "pwsh")
+
+.EXAMPLE
+    $obj = "simple string"
+    Get-PSObjectProperty -Object $obj -Property "Length" -FailIfMissing
+    Returns 14 (string has Length property)
+#>
+function Get-PSObjectProperty {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true, Position = 0)]
+        [object]$Object,
+
+        [Parameter(Mandatory = $true, Position = 1)]
+        [string]$Property,
+
+        [Parameter(Mandatory = $false)]
+        [object]$Default = $null,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$FailIfMissing,
+
+        [Parameter(Mandatory = $false)]
+        [string]$ErrorContext = $null
+    )
+
+    $propertyExists = $Object.PSObject.Properties.Name -contains $Property
+
+    if (-not $propertyExists) {
+        if ($FailIfMissing) {
+            $contextMsg = if ($ErrorContext) { " [Context: $ErrorContext]" } else { "" }
+            throw "Get-PSObjectProperty: Property '$Property' not found on object of type '$($Object.GetType().FullName)'$contextMsg"
+        }
+        return $Default
+    }
+
+    return $Object.$Property
+}
+
+<#
+.SYNOPSIS
+    Safely retrieves a value from a hashtable by key.
+
+.DESCRIPTION
+    Retrieves a value for the specified key from a hashtable without throwing if the key doesn't exist.
+    Uses .ContainsKey() method to check existence before access, avoiding ambiguity between missing keys
+    and keys that explicitly store $null.
+
+.PARAMETER Hashtable
+    The hashtable from which to retrieve the value.
+
+.PARAMETER Key
+    The key to look up in the hashtable.
+
+.PARAMETER Default
+    Value to return if the key does not exist. Defaults to $null.
+
+.PARAMETER FailIfMissing
+    If specified, throws a descriptive error when the key does not exist.
+    Overrides -Default.
+
+.PARAMETER ErrorContext
+    Optional caller-provided context string (e.g., function name) included in the error message.
+
+.EXAMPLE
+    $ht = @{ Name = "Bob"; Age = 25 }
+    Get-HashTableProperty -Hashtable $ht -Key "Name"
+    Returns "Bob"
+
+.EXAMPLE
+    $ht = @{ Name = "Bob" }
+    Get-HashTableProperty -Hashtable $ht -Key "Missing" -Default ""
+    Returns "" (empty string, because key doesn't exist)
+
+.EXAMPLE
+    $ht = @{ Name = "Bob" }
+    Get-HashTableProperty -Hashtable $ht -Key "Missing" -FailIfMissing -ErrorContext "GetConfig"
+    Throws: "Get-HashTableProperty: Key 'Missing' not found in hashtable [Context: GetConfig]"
+
+.EXAMPLE
+    $ht = @{ Status = $null }
+    Get-HashTableProperty -Hashtable $ht -Key "Status"
+    Returns $null (key exists, value is $null - returns actual stored value, not Default)
+
+.EXAMPLE
+    $ht = @{}
+    Get-HashTableProperty -Hashtable $ht -Key "AnyKey" -Default "Not Found"
+    Returns "Not Found" (key doesn't exist, returns Default)
+#>
+function Get-HashTableProperty {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true, Position = 0)]
+        [ValidateNotNull()]
+        [hashtable]$Hashtable,
+
+        [Parameter(Mandatory = $true, Position = 1)]
+        [string]$Key,
+
+        [Parameter(Mandatory = $false)]
+        [object]$Default = $null,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$FailIfMissing,
+
+        [Parameter(Mandatory = $false)]
+        [string]$ErrorContext = $null
+    )
+
+    # Check if key exists
+    $keyExists = $Hashtable.ContainsKey($Key)
+
+    if (-not $keyExists) {
+        if ($FailIfMissing) {
+            $contextMsg = if ($ErrorContext) { " [Context: $ErrorContext]" } else { "" }
+            throw "Get-HashTableProperty: Key '$Key' not found in hashtable$contextMsg"
+        }
+        return $Default
+    }
+
+    # Key exists — retrieve value
+    return $Hashtable[$Key]
+}
+
+<#
+.SYNOPSIS
     Programmatically sets a ComboBox's SelectedItem without triggering its event handler.
 
 .DESCRIPTION
