@@ -4,6 +4,20 @@ This document explains design decisions and non-obvious implementation details f
 
 ## Table of Contents
 
+- [Object Model: Categories, Groups, and Jobs](#object-model-categories-groups-and-jobs)
+  - [The Raw JSON Objects](#the-raw-json-objects)
+  - [The Wrapper Objects (Items)](#the-wrapper-objects-items)
+  - [Why Two Layers?](#why-two-layers)
+  - [Where Each Object Type Lives](#where-each-object-type-lives)
+  - [The Critical Rule](#the-critical-rule)
+  - [How to Access Raw Config from a Wrapper](#how-to-access-raw-config-from-a-wrapper)
+  - [How to Traverse Upward from a Job Item](#how-to-traverse-upward-from-a-job-item)
+- [Left Panel Views: TreeView vs. ListBox (Flat View)](#left-panel-views-treeview-vs-listbox-flat-view)
+  - [TreeView (Hierarchical View)](#treeview-hierarchical-view)
+  - [ListBox with Dividers (Flat View)](#listbox-with-dividers-flat-view)
+  - [Flat JSON (No Categories)](#flat-json-no-categories)
+  - [Toggle Button](#toggle-button)
+  - [Control Storage](#control-storage)
 - [Job Execution System](#job-execution-system)
   - [Overview](#overview)
   - [Core Data Flow](#core-data-flow)
@@ -24,6 +38,134 @@ This document explains design decisions and non-obvious implementation details f
   - [Testing Streaming](#testing-streaming)
   - [Future Improvements (if needed)](#future-improvements-if-needed)
 ---
+
+## Object Model: Categories, Groups, and Jobs
+
+The script defines three levels of objects, each with a "raw" and "wrapped" form. Understanding this distinction is critical for working with the code.
+
+### The Raw JSON Objects
+
+When you run `ConvertFrom-Json` on `launcher_config.json`, PowerShell creates **PSCustomObject** instances for every JSON object. These are the raw config objects:
+
+- **Category** — contains `.name`, `.groups` (array), optional `.theme`, `.working_directory`, `.timeout_seconds`
+- **Group** — contains `.name`, `.jobs` (array), optional `.theme`, `.working_directory`, `.timeout_seconds`
+- **Job** — contains `.name`, `.command`, optional `.detached`, `.timeout_seconds`, `.working_directory`
+
+These raw objects have **no parent references**. A job cannot tell you which group it belongs to. A group cannot tell you which category it belongs to. They are just data.
+
+### The Wrapper Objects (Items)
+
+Immediately after parsing, the script wraps each raw object in a **wrapper object** (called an "Item") that adds parent references and UI display properties.
+
+**Category Item** (Type = "category")
+- Created in `Load-HierarchicalConfig`
+- Contains: `.Type`, `.Label`, `.Node` (raw Category)
+- Used for: display only (non-selectable, appears as bold divider in flat view)
+
+**Group Item** (Type = "group")
+- Created in `Load-HierarchicalConfig` or `Load-FlatConfig`
+- Contains: `.Type`, `.Label`, `.Node` (raw Group), `.Parent` (parent Category Item), `.JobItems` (array of Job Items)
+- Used for: navigation selection, contains wrapped jobs, inherits theme from parent
+
+**Job Item** (Type = "job")
+- Created in `Load-HierarchicalConfig` or `Load-FlatConfig`
+- Contains: `.Type`, `.Label`, `.Node` (raw Job), `.ParentGroup` (raw Group), `.ParentCategory` (raw Category or `$null`)
+- Used for: execution with parent traversal (working_directory, timeout_seconds)
+
+### Why Two Layers?
+
+**Raw objects** — keep the original JSON intact. Never modified. Safe to pass to functions that only need the config data.
+
+**Wrapper objects** — add behavior (parent references) without polluting the raw JSON. Enable upward traversal for settings inheritance.
+
+### Where Each Object Type Lives
+
+| Object | Created In | Stored In | Accessed Via |
+|--------|-----------|-----------|---------------|
+| Raw Category | `ConvertFrom-Json` | `$config.categories` | Not directly used after wrapping |
+| Category Item | `Load-HierarchicalConfig` | `$script:NavigationItems` | Left panel (flat view) or TreeView |
+| Raw Group | `ConvertFrom-Json` | `$config.groups` (flat) or `$category.groups` (hierarchical) | Not directly used after wrapping |
+| Group Item | `Load-HierarchicalConfig` or `Load-FlatConfig` | `$script:NavigationItems` | Left panel selection, passed to `Update-ButtonsForGroup` |
+| Raw Job | `ConvertFrom-Json` | `$group.jobs` | Stored inside Job Item's `.Node` |
+| Job Item | `Load-HierarchicalConfig` or `Load-FlatConfig` | `$GroupItem.JobItems` | Passed to `Invoke-Job`, `Get-JobWorkingDirectory`, `Get-JobTimeout` |
+
+### The Critical Rule
+
+> **If a function needs parent traversal (working_directory, timeout_seconds, theme), it receives a wrapper Item (Category Item, Group Item, or Job Item).**
+>
+> **If a function only needs config data (command, name), it receives the raw PSCustomObject from `.Node`.**
+
+This keeps responsibilities clear and prevents accidental coupling.
+
+### How to Access Raw Config from a Wrapper
+
+```powershell
+# Given a Job Item
+$rawJob = $JobItem.Node          # Returns PSCustomObject with .name, .command, etc.
+$rawGroup = $GroupItem.Node      # Returns PSCustomObject with .name, .jobs, etc.
+$rawCategory = $CategoryItem.Node # Returns PSCustomObject with .name, .groups, etc.
+```
+
+### How to Traverse Upward from a Job Item
+
+```powershell
+# Inside Get-JobWorkingDirectory or Get-JobTimeout
+$rawJob = Get-JobConfig -JobItem $JobItem  # same as $JobItem.Node with validation
+
+# Parent group (raw JSON)
+if ($JobItem.ParentGroup.working_directory) { ... }
+
+# Parent category (raw JSON, may be $null for flat configs)
+if ($JobItem.ParentCategory -and $JobItem.ParentCategory.working_directory) { ... }
+```
+
+---
+
+## Left Panel Views: TreeView vs. ListBox (Flat View)
+
+The left panel can display the same navigation data in two different ways, depending on the `view` setting in JSON or user toggle.
+
+### TreeView (Hierarchical View)
+
+- **Used when:** `"view": "tree"` in JSON or user toggles to Tree View
+- **Rendered by:** `Populate-TreeView`
+- **Control:** `System.Windows.Forms.TreeView`
+- **Behavior:** Categories are expandable/collapsible parent nodes. Groups are child nodes. Clicking a group selects it.
+
+### ListBox with Dividers (Flat View)
+
+- **Used when:** `"view": "flat"` in JSON (default) or user toggles to List View
+- **Rendered by:** `Populate-ListWithDividers`
+- **Control:** `System.Windows.Forms.ListBox` with owner-draw enabled
+- **Behavior:** Categories appear as bold, centered, non-selectable dividers. Groups appear as normal selectable items below their category divider.
+
+### Flat JSON (No Categories)
+
+- **Used when:** JSON has no `categories` key (only `groups` array)
+- **Rendered by:** `Populate-FlatList`
+- **Control:** `System.Windows.Forms.ListBox` (simple, not owner-draw)
+- **Behavior:** Groups appear as selectable items. No category dividers. No toggle button (only one possible view).
+
+### Toggle Button
+
+- **Appears only when:** JSON has categories (hierarchical structure)
+- **Created by:** `Create-ToggleButton`
+- **Stored in:** `$script:FormControls.ToggleButton`
+- **Behavior:** Switches between TreeView and ListBox views. User preference persists via `$script:FormControls.ToggleButton.Tag` and overrides JSON `view` setting.
+
+### Control Storage
+
+After population, the active control is always stored in `$script:FormControls` under either `.TreeView` or `.ListBox`. This allows other functions (theming, selection) to work with whichever view is active without knowing which one.
+
+```powershell
+# Theme application handles both
+if ($script:FormControls.TreeView) {
+    # Apply colors to TreeView
+}
+if ($script:FormControls.ListBox) {
+    # Apply colors to ListBox
+}
+```
 
 ## Job Execution System
 
