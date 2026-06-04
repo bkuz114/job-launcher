@@ -978,6 +978,20 @@ function Get-JobProperty {
         [string]$ErrorContext = $null
     )
 
+    # Validate Job is not $null
+    if ($Job -eq $null) {
+        $contextMsg = if ($ErrorContext) { " [Context: Get-JobProperty -> $ErrorContext]" }
+                      else { " [Context: Get-JobProperty]" }
+        throw "Get-JobProperty: Job object cannot be null$contextMsg"
+    }
+
+    # Validate Property is not null or empty
+    if ([string]::IsNullOrWhiteSpace($Property)) {
+        $contextMsg = if ($ErrorContext) { " [Context: Get-JobProperty -> $ErrorContext]" }
+                      else { " [Context: Get-JobProperty]" }
+        throw "Get-JobProperty: Property name cannot be null or empty$contextMsg"
+    }
+
     # Build context: prepend "Get-JobProperty" to any existing context
     $enhancedContext = "Get-JobProperty"
     if (-not [string]::IsNullOrWhiteSpace($ErrorContext)) {
