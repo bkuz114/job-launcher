@@ -166,6 +166,40 @@
       ]
     },
     {
+      "name": "Long-Running Tests",
+      "groups": [
+        {
+          "name": "Sleep with console",
+          "jobs": [
+            {
+              "name": "Slow Job (Test Timeout - 25s)",
+              "command": "powershell.exe -Command \"1..25 | ForEach-Object { Write-Host 'Step' $_; Start-Sleep -Seconds 1 }; Write-Host 'Done'\"",
+              "timeout_seconds": 60
+            },
+            {
+              "name": "Very Slow Job (Test Kill - 60s)",
+              "command": "powershell.exe -Command \"1..60 | ForEach-Object { Write-Host 'Waiting...' $_; Start-Sleep -Seconds 1 }; Write-Host 'Finished'\"",
+              "timeout_seconds": 70
+            }
+          ]
+        },
+        {
+          "name": "Networking (Ping)",
+          "jobs": [
+            {
+              "name": "Ping (10 seconds)",
+              "command": "ping -n 10 127.0.0.1"
+            },
+            {
+              "name": "Ping (10 seconds) (detached)",
+              "command": "ping -n 10 127.0.0.1",
+              "detached": true
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "Tests",
       "groups": [
         {
