@@ -111,10 +111,10 @@
       ]
     },
     {
-      "name": "Detached",
+      "name": "Detached Jobs",
       "groups": [
         {
-          "name": "Notepad Tests",
+          "name": "Application Tests",
           "jobs": [
             {
               "name": "Notepad - No Args",
@@ -124,6 +124,11 @@
             {
               "name": "Notepad - Path with Spaces",
               "command": "notepad.exe \"C:\\Users\\user\\test folder\\testfile.txt\"",
+              "detached": true
+            },
+            {
+              "name": "Calculator",
+              "command": "calc.exe",
               "detached": true
             }
           ]
@@ -149,31 +154,11 @@
           ]
         },
         {
-          "name": "Error Output Tests",
-          "jobs": [
-            {
-              "name": "Non-existent Command",
-              "command": "notexist.exe",
-              "detached": true
-            },
-            {
-              "name": "Invalid Path",
-              "command": "notepad.exe \"Z:\\Invalid\\Path\\file.txt\"",
-              "detached": true
-            }
-          ]
-        },
-        {
           "name": "Long-running Tests",
           "jobs": [
             {
               "name": "Ping (10 seconds)",
               "command": "ping -n 10 127.0.0.1",
-              "detached": true
-            },
-            {
-              "name": "Calculator",
-              "command": "calc.exe",
               "detached": true
             }
           ]
