@@ -989,6 +989,180 @@ function Get-JobProperty {
 
 <#
 .SYNOPSIS
+    Safely retrieves a property value from a job result object.
+
+.DESCRIPTION
+    Returns a property value from a job result object if the property exists, otherwise returns a default value.
+    Handles missing properties without errors.
+
+    The function automatically prepends "Get-JobResultProperty" to the ErrorContext parameter before passing
+    it to Get-PSObjectProperty, creating a lightweight call stack trace for debugging.
+
+.PARAMETER JobResult
+    The job result object set during Invoke-Job to help manage job state.
+    Contains properties: .Success, .ExitCode, .TerminationReason, .StdOut, .StdErr, etc.
+
+.PARAMETER Property
+    The name of the property to retrieve from the job result object.
+
+.PARAMETER Default
+    Value to return if the property does not exist. Defaults to $null.
+
+.PARAMETER FailIfMissing
+    If specified, throws a terminating error when the property does not exist.
+    Overrides -Default.
+
+.PARAMETER ErrorContext
+    Optional caller-provided context string included in the error message for traceability.
+    This value is appended after "Get-JobResultProperty" in the final error context.
+
+.EXAMPLE
+    Get-JobResultProperty -JobResult $Result -Property "ExitCode" -Default -1
+    Returns the value of property "ExitCode" or -1 if not found
+
+.EXAMPLE
+    Get-JobResultProperty -JobResult $Result -Property "StdErr" -FailIfMissing
+    Throws an error if the "StdErr" property does not exist.
+#>
+function Get-JobResultProperty {
+    param (
+        [Parameter(Mandatory = $true, Position = 0)]
+        [object]$JobResult,
+
+        [Parameter(Mandatory = $true, Position = 1)]
+        [string]$Property,
+
+        [Parameter(Mandatory = $false)]
+        [object]$Default = $null,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$FailIfMissing,
+
+        [Parameter(Mandatory = $false)]
+        [string]$ErrorContext = $null
+    )
+
+    # Validate Job is not $null
+    if ($JobResult -eq $null) {
+        $contextMsg = if ($ErrorContext) { " [Context: Get-JobProperty -> $ErrorContext]" }
+                      else { " [Context: Get-JobProperty]" }
+        throw "Get-JobProperty: Job object cannot be null$contextMsg"
+    }
+
+    # Validate Property is not null or empty
+    if ([string]::IsNullOrWhiteSpace($Property)) {
+        $contextMsg = if ($ErrorContext) { " [Context: Get-JobResultProperty -> $ErrorContext]" }
+                      else { " [Context: Get-JobResultProperty]" }
+        throw "Get-JobResultProperty: Property name cannot be null or empty$contextMsg"
+    }
+
+    # Build context: prepend "Get-JobResultProperty" to any existing context
+    $enhancedContext = "Get-JobResultProperty"
+    if (-not [string]::IsNullOrWhiteSpace($ErrorContext)) {
+        $enhancedContext = "Get-JobResultProperty -> $ErrorContext"
+    }
+
+    return Get-PSObjectProperty -Object $JobResult -Property $Property -Default $Default -FailIfMissing:$FailIfMissing -ErrorContext $enhancedContext
+}
+
+<#
+.SYNOPSIS
+    Safely sets a property value on a job result object.
+
+.DESCRIPTION
+    Sets a property on a job result object. If the property doesn't exist and
+    -FailIfMissing is omitted (default), the property is created automatically.
+    If -FailIfMissing is specified, validates existence before setting and throws
+    if the property is missing.
+
+    This function is the counterpart to Get-JobResultProperty, maintaining
+    type agnosticism so future changes (e.g., switching from PSCustomObject to
+    Hashtable) require updating only the underlying Get/Set helpers.
+
+.PARAMETER JobResult
+    The job result object set during Invoke-Job to help manage job state.
+    Contains properties: .Success, .ExitCode, .TerminationReason, .StdOut, .StdErr, etc.
+
+.PARAMETER Property
+    The name of the property to set.
+
+.PARAMETER Value
+    The value to assign to the property.
+
+.PARAMETER FailIfMissing
+    If specified, throws an error when the property does not exist on the object.
+    If omitted (default), creates the property if it doesn't exist.
+
+.PARAMETER ErrorContext
+    Optional caller-provided context string included in error messages for traceability.
+    Automatically prefixed with "Set-JobResultProperty -> " before passing downstream.
+
+.EXAMPLE
+    Set-JobResultProperty -JobResult $result -Property "Status" -Value "Completed"
+    Sets Status property (creates it if missing)
+
+.EXAMPLE
+    Set-JobResultProperty -JobResult $result -Property "ExitCode" -Value 0 -FailIfMissing
+    Throws if ExitCode property doesn't exist
+
+.EXAMPLE
+    Set-JobResultProperty -JobResult $null -Property "Status" -Value "Failed" -ErrorContext "UpdateResults"
+    Throws: "Set-JobResultProperty: JobResult object cannot be null [Context: Set-JobResultProperty -> UpdateResults]"
+
+.EXAMPLE
+    Set-JobResultProperty -JobResult $result -Property "" -Value "data" -FailIfMissing
+    Throws: "Set-JobResultProperty: Property name cannot be null or empty"
+#>
+function Set-JobResultProperty {
+    param (
+        [Parameter(Mandatory = $true, Position = 0)]
+        [object]$JobResult,
+
+        [Parameter(Mandatory = $true, Position = 1)]
+        [string]$Property,
+
+        [Parameter(Mandatory = $true, Position = 2)]
+        [object]$Value,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$FailIfMissing,
+
+        [Parameter(Mandatory = $false)]
+        [string]$ErrorContext = $null
+    )
+
+    # Validate JobResult is not $null
+    if ($JobResult -eq $null) {
+        $contextMsg = if ($ErrorContext) { " [Context: Set-JobResultProperty -> $ErrorContext]" }
+                      else { " [Context: Set-JobResultProperty]" }
+        throw "Set-JobResultProperty: JobResult object cannot be null$contextMsg"
+    }
+
+    # Validate Property is not null or empty
+    if ([string]::IsNullOrWhiteSpace($Property)) {
+        $contextMsg = if ($ErrorContext) { " [Context: Set-JobResultProperty -> $ErrorContext]" }
+                      else { " [Context: Set-JobResultProperty]" }
+        throw "Set-JobResultProperty: Property name cannot be null or empty$contextMsg"
+    }
+
+    # Build context for any downstream errors
+    $enhancedContext = "Set-JobResultProperty"
+    if (-not [string]::IsNullOrWhiteSpace($ErrorContext)) {
+        $enhancedContext = "Set-JobResultProperty -> $ErrorContext"
+    }
+
+    # Check if property exists when FailIfMissing is specified
+    if ($FailIfMissing) {
+        # Delegate existence check to Get-JobResultProperty so that function is agnostic to which type of object Job results are
+        Get-JobResultProperty -JobResult $JobResult -Property $Property -FailIfMissing -ErrorContext $enhancedContext
+    }
+
+    # Set the property (creates new property if it doesn't exist and FailIfMissing is false)
+    $JobResult.$Property = $Value
+}
+
+<#
+.SYNOPSIS
     Creates a Process object for a blocking (normal) job.
 
 .DESCRIPTION
