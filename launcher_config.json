@@ -95,8 +95,8 @@
               "timeout_seconds": 15
             },
             {
-              "name": "Ping Localhost (2 packets)",
-              "command": "cmd.exe /c ping 127.0.0.1 -n 2",
+              "name": "Ping Localhost (4 packets)",
+              "command": "cmd.exe /c ping 127.0.0.1 -n 4",
               "working_directory": null,
               "timeout_seconds": 10
             },
