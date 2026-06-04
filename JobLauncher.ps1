@@ -1932,7 +1932,7 @@ function Stop-CurrentJob {
         }
         # Update termination reason for result in cleanup
         if ($script:CurrentRunningJob.ContainsKey('Result')) {
-            $script:CurrentRunningJob.Result.TerminationReason = "KillRequested"
+            Set-JobResultProperty -JobResult $script:CurrentRunningJob.Result -Property "TerminationReason" -Value "KillRequested" -FailIfMissing
         }
     }
     catch {

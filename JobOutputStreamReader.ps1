@@ -181,14 +181,15 @@ function Process-JobOutputQueue {
                 Write-OutputWithTimestamp $content -IsError $isErrorLine
             }
         }
-        
+
         # Append to result object for final log
+        # NOTE: StdOut and StdErr properties are expected to already exist on ResultObject
         if ($type -eq "OUT") {
-            if ($ResultObject.StdOut -eq $null) { $ResultObject.StdOut = "" }
-            $ResultObject.StdOut += "$content`r`n"
+            $currentStdOut = Get-JobResultProperty -JobResult $ResultObject -Property "StdOut" -FailIfMissing
+            $ResultObject.StdOut = "$currentStdOut$content`r`n"
         } elseif ($type -eq "ERR") {
-            if ($ResultObject.StdErr -eq $null) { $ResultObject.StdErr = "" }
-            $ResultObject.StdErr += "$content`r`n"
+            $currentStdErr = Get-JobResultProperty -JobResult $ResultObject -Property "StdErr" -FailIfMissing
+            $ResultObject.StdErr = "$currentStdErr$content`r`n"
         }
     }
     
