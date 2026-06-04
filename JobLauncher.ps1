@@ -607,8 +607,8 @@ function Initialize-JobLog {
     $logContent = ""
 
     # job details to put in header
-    $jobName = Get-JobProperty -Job $Job -Property "name" -ThrowError $true # throw error if no job name found
-    $jobCommand = Get-JobProperty -Job $Job -Property "command" -ThrowError $true # throw error if can't find command
+    $jobName = Get-JobProperty -Job $Job -Property "name" -FailIfMissing # throw error if no job name found
+    $jobCommand = Get-JobProperty -Job $Job -Property "command" -FailIfMissing # throw error if can't find command
     $jobDetachedState = switch (Get-JobProperty -Job $Job -Property "detached" -Default $null) {
         $true { "yes" }
         $false { "no" }
@@ -908,57 +908,83 @@ function Get-JobConfig {
 
 <#
 .SYNOPSIS
-    Safely retrieves a property value from a job hashtable.
+    Safely retrieves a property value from a job object.
+
 .DESCRIPTION
-    Returns a property value from a job hashtable if the key exists, otherwise returns a default value.
-    Handles missing keys without errors. Assumes the job object is a hashtable.
+    Returns a property value from a job object if the property exists, otherwise returns a default value.
+    Handles missing properties without errors.
+
+    The function automatically prepends "Get-JobProperty" to the ErrorContext parameter before passing
+    it to Get-PSObjectProperty, creating a lightweight call stack trace for debugging.
+
 .PARAMETER Job
     The raw job configuration object (PSCustomObject) parsed from JSON.
     Created during JSON loading in Load-FlatConfig or Load-HierarchicalConfig.
     Contains what JSON contains: .name and .command properties, plus optional
     .detached, .timeout_seconds, and .working_directory.
+
 .PARAMETER Property
-    The key name to look up in the hashtable.
+    The name of the property to retrieve from the job object.
+
 .PARAMETER Default
-    Value to return if the key does not exist in the hashtable. Default is $null.
-.PARAMETER ThrowError
-    If $true, throws a terminating error when the key does not exist.
-    If $false (default), returns Default value instead.
+    Value to return if the property does not exist. Defaults to $null.
+
+.PARAMETER FailIfMissing
+    If specified, throws a terminating error when the property does not exist.
+    Overrides -Default.
+
+.PARAMETER ErrorContext
+    Optional caller-provided context string included in the error message for traceability.
+    This value is appended after "Get-JobProperty" in the final error context.
+
 .EXAMPLE
-    $jobName = Get-JobProperty -Job $Job -Property "name" -Default "unknown"
-    Returns the value of key "name" or "unknown" if not found.
+    Get-JobProperty -Job $Job -Property "name" -Default "unknown"
+    Returns the value of property "name" or "unknown" if not found.
+
 .EXAMPLE
-    $detachedState = Get-JobProperty $Job "detached" -ThrowError
-    Throws an error if the "detached" key does not exist.
+    Get-JobProperty -Job $Job -Property "detached" -FailIfMissing
+    Throws an error if the "detached" property does not exist.
+
 .EXAMPLE
-    $value = Get-JobProperty $Job "missing" -Default $false
-    Returns $false because the key does not exist.
+    Get-JobProperty -Job $Job -Property "missing" -Default $false -ErrorContext "ValidateJob"
+    Returns $false (default). If -FailIfMissing were also used, error would show:
+    "Get-PSObjectProperty: Property 'missing' not found... [Context: Get-JobProperty -> ValidateJob]"
+
+.EXAMPLE
+    # Positional parameters (backward compatible)
+    Get-JobProperty $Job "name"
+    Returns the value of property "name" or $null if not found.
+
+.EXAMPLE
+    # $null job object passes through to Get-PSObjectProperty for custom error handling
+    Get-JobProperty -Job $null -Property "name" -FailIfMissing -ErrorContext "LoadConfig"
+    Throws custom error from Get-PSObjectProperty with context: "Get-JobProperty -> LoadConfig"
 #>
 function Get-JobProperty {
-    param(
-        [Parameter(Mandatory = $true)]
-        [PSObject]$Job,
+    param (
+        [Parameter(Mandatory = $true, Position = 0)]
+        [object]$Job,
 
-        [Parameter(Mandatory = $true)]
+        [Parameter(Mandatory = $true, Position = 1)]
         [string]$Property,
 
-        $Default = $null,
+        [Parameter(Mandatory = $false)]
+        [object]$Default = $null,
 
-        [boolean]$ThrowError = $false
+        [Parameter(Mandatory = $false)]
+        [switch]$FailIfMissing,
+
+        [Parameter(Mandatory = $false)]
+        [string]$ErrorContext = $null
     )
 
-    # Check if property exists on PSCustomObject
-    $propertyExists = $Job.PSObject.Properties[$Property] -ne $null
-
-    if ($propertyExists) {
-        return $Job.$Property
+    # Build context: prepend "Get-JobProperty" to any existing context
+    $enhancedContext = "Get-JobProperty"
+    if (-not [string]::IsNullOrWhiteSpace($ErrorContext)) {
+        $enhancedContext = "Get-JobProperty -> $ErrorContext"
     }
 
-    if ($ThrowError) {
-        throw "Get-JobProperty: Property '$Property' not found on job object."
-    }
-
-    return $Default
+    return Get-PSObjectProperty -Object $Job -Property $Property -Default $Default -FailIfMissing:$FailIfMissing -ErrorContext $enhancedContext
 }
 
 <#
@@ -1451,8 +1477,8 @@ function Invoke-Job {
 
     $UI_Color_StatusError = Get-ThemeColor -PropertyName "status_error"
     $UI_Color_StatusOk = Get-ThemeColor -PropertyName "status_ok"
-    $jobName = Get-JobProperty -Job $rawJob -Property "name" -ThrowError $true # throw error if no job name found
-    $jobCommand = Get-JobProperty -Job $rawJob -Property "command" -ThrowError $true # throw error if can't find command
+    $jobName = Get-JobProperty -Job $rawJob -Property "name" -FailIfMissing # throw error if no job name found
+    $jobCommand = Get-JobProperty -Job $rawJob -Property "command" -FailIfMissing # throw error if can't find command
 
     # == Determine Timeout ==
 
