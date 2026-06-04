@@ -978,24 +978,20 @@ function Get-JobProperty {
         [string]$ErrorContext = $null
     )
 
+    # Build enhanced context
+    $enhancedContext = "Get-JobProperty"
+    if (-not [string]::IsNullOrWhiteSpace($ErrorContext)) {
+        $enhancedContext = "Get-JobProperty -> $ErrorContext"
+    }
+
     # Validate Job is not $null
     if ($Job -eq $null) {
-        $contextMsg = if ($ErrorContext) { " [Context: Get-JobProperty -> $ErrorContext]" }
-                      else { " [Context: Get-JobProperty]" }
-        throw "Get-JobProperty: Job object cannot be null$contextMsg"
+        throw "Get-JobProperty: Job object cannot be null [Context: $enhancedContext]"
     }
 
     # Validate Property is not null or empty
     if ([string]::IsNullOrWhiteSpace($Property)) {
-        $contextMsg = if ($ErrorContext) { " [Context: Get-JobProperty -> $ErrorContext]" }
-                      else { " [Context: Get-JobProperty]" }
-        throw "Get-JobProperty: Property name cannot be null or empty$contextMsg"
-    }
-
-    # Build context: prepend "Get-JobProperty" to any existing context
-    $enhancedContext = "Get-JobProperty"
-    if (-not [string]::IsNullOrWhiteSpace($ErrorContext)) {
-        $enhancedContext = "Get-JobProperty -> $ErrorContext"
+        throw "Get-JobProperty: Property name cannot be null or empty [Context: $enhancedContext]"
     }
 
     return Get-PSObjectProperty -Object $Job -Property $Property -Default $Default -FailIfMissing:$FailIfMissing -ErrorContext $enhancedContext
@@ -1056,24 +1052,20 @@ function Get-JobResultProperty {
         [string]$ErrorContext = $null
     )
 
-    # Validate Job is not $null
+    # Build enhanced context once
+    $enhancedContext = "Get-JobResultProperty"
+    if (-not [string]::IsNullOrWhiteSpace($ErrorContext)) {
+        $enhancedContext = "Get-JobResultProperty -> $ErrorContext"
+    }
+
+    # Validate JobResult is not $null
     if ($JobResult -eq $null) {
-        $contextMsg = if ($ErrorContext) { " [Context: Get-JobResultProperty -> $ErrorContext]" }
-                      else { " [Context: Get-JobResultProperty]" }
-        throw "Get-JobResultProperty: Job object cannot be null$contextMsg"
+        throw "Get-JobResultProperty: JobResult object cannot be null [Context: $enhancedContext]"
     }
 
     # Validate Property is not null or empty
     if ([string]::IsNullOrWhiteSpace($Property)) {
-        $contextMsg = if ($ErrorContext) { " [Context: Get-JobResultProperty -> $ErrorContext]" }
-                      else { " [Context: Get-JobResultProperty]" }
-        throw "Get-JobResultProperty: Property name cannot be null or empty$contextMsg"
-    }
-
-    # Build context: prepend "Get-JobResultProperty" to any existing context
-    $enhancedContext = "Get-JobResultProperty"
-    if (-not [string]::IsNullOrWhiteSpace($ErrorContext)) {
-        $enhancedContext = "Get-JobResultProperty -> $ErrorContext"
+        throw "Get-JobResultProperty: Property name cannot be null or empty [Context: $enhancedContext]"
     }
 
     return Get-PSObjectProperty -Object $JobResult -Property $Property -Default $Default -FailIfMissing:$FailIfMissing -ErrorContext $enhancedContext
@@ -1145,24 +1137,20 @@ function Set-JobResultProperty {
         [string]$ErrorContext = $null
     )
 
+    # Build enhanced context once
+    $enhancedContext = "Set-JobResultProperty"
+    if (-not [string]::IsNullOrWhiteSpace($ErrorContext)) {
+        $enhancedContext = "Set-JobResultProperty -> $ErrorContext"
+    }
+
     # Validate JobResult is not $null
     if ($JobResult -eq $null) {
-        $contextMsg = if ($ErrorContext) { " [Context: Set-JobResultProperty -> $ErrorContext]" }
-                      else { " [Context: Set-JobResultProperty]" }
-        throw "Set-JobResultProperty: JobResult object cannot be null$contextMsg"
+        throw "Set-JobResultProperty: JobResult object cannot be null [Context: $enhancedContext]"
     }
 
     # Validate Property is not null or empty
     if ([string]::IsNullOrWhiteSpace($Property)) {
-        $contextMsg = if ($ErrorContext) { " [Context: Set-JobResultProperty -> $ErrorContext]" }
-                      else { " [Context: Set-JobResultProperty]" }
-        throw "Set-JobResultProperty: Property name cannot be null or empty$contextMsg"
-    }
-
-    # Build context for any downstream errors
-    $enhancedContext = "Set-JobResultProperty"
-    if (-not [string]::IsNullOrWhiteSpace($ErrorContext)) {
-        $enhancedContext = "Set-JobResultProperty -> $ErrorContext"
+        throw "Set-JobResultProperty: Property name cannot be null or empty [Context: $enhancedContext]"
     }
 
     # Check if property exists when FailIfMissing is specified
