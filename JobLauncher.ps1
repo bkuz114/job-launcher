@@ -3757,7 +3757,6 @@ function Get-HashTableProperty {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true, Position = 0)]
-        [ValidateNotNull()]
         [hashtable]$Hashtable,
 
         [Parameter(Mandatory = $true, Position = 1)]
