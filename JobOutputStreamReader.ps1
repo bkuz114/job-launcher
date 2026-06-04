@@ -28,10 +28,10 @@ function Invoke-UIThread {
     param(
         [Parameter(Mandatory = $true)]
         [ScriptBlock]$Action,
-        
+
         [System.Windows.Forms.Control]$Form = $script:MainForm
     )
-    
+
     if ($Form -and $Form.InvokeRequired) {
         $Form.Invoke($Action)
     } else {
@@ -64,23 +64,23 @@ function Start-JobOutputStreamReader {
     param(
         [Parameter(Mandatory = $true)]
         [System.Diagnostics.Process]$Process,
-        
+
         [Parameter(Mandatory = $true)]
         [System.Collections.Concurrent.ConcurrentQueue[string]]$OutputQueue,
-        
+
         [string]$DebugLog
     )
-    
+
     # Verify redirects are enabled
     if (-not $Process.StartInfo.RedirectStandardOutput -and -not $Process.StartInfo.RedirectStandardError) {
         Write-Verbose "No streams to redirect. Streaming disabled."
         return $null
     }
-    
+
     # Generate unique source identifiers
     $outputId = "OutputEvent_$([System.Guid]::NewGuid())"
     $errorId = "ErrorEvent_$([System.Guid]::NewGuid())"
-    
+
     # Helper to write debug logs
     $writeDebug = {
         param($Message)
@@ -89,7 +89,7 @@ function Start-JobOutputStreamReader {
             [System.IO.File]::AppendAllText($DebugLog, "[$timestamp] $Message`r`n")
         }
     }
-    
+
     # Register stdout event
     $outputEvent = Register-ObjectEvent -InputObject $Process -EventName OutputDataReceived -SourceIdentifier $outputId -MessageData $OutputQueue -Action {
         $data = $Event.SourceEventArgs.Data
@@ -97,7 +97,7 @@ function Start-JobOutputStreamReader {
             $Event.MessageData.Enqueue("OUT|$data")
         }
     }
-    
+
     # Register stderr event
     $errorEvent = Register-ObjectEvent -InputObject $Process -EventName ErrorDataReceived -SourceIdentifier $errorId -MessageData $OutputQueue -Action {
         $data = $Event.SourceEventArgs.Data
@@ -105,7 +105,7 @@ function Start-JobOutputStreamReader {
             $Event.MessageData.Enqueue("ERR|$data")
         }
     }
-    
+
     # Start asynchronous reading
     try {
         $Process.BeginOutputReadLine()
@@ -118,7 +118,7 @@ function Start-JobOutputStreamReader {
         Unregister-Event -SourceIdentifier $errorId -ErrorAction SilentlyContinue
         throw
     }
-    
+
     return @{
         OutputEvent = $outputEvent
         ErrorEvent = $errorEvent
@@ -154,26 +154,26 @@ function Process-JobOutputQueue {
     param(
         [Parameter(Mandatory = $true)]
         [System.Collections.Concurrent.ConcurrentQueue[string]]$OutputQueue,
-        
+
         [Parameter(Mandatory = $true)]
         [PSObject]$ResultObject,
-        
+
         [bool]$WriteToUI = $true
     )
-    
+
     $hadOutput = $false
     $line = $null
-    
+
     while ($OutputQueue.TryDequeue([ref]$line)) {
         $hadOutput = $true
-        
+
         # Parse line format: "TYPE|content"
         $separatorIdx = $line.IndexOf('|')
         if ($separatorIdx -le 0) { continue }
-        
+
         $type = $line.Substring(0, $separatorIdx)
         $content = $line.Substring($separatorIdx + 1)
-        
+
         # Update UI if requested
         if ($WriteToUI) {
             $isErrorLine = ($type -eq "ERR")
@@ -192,10 +192,10 @@ function Process-JobOutputQueue {
             $ResultObject.StdErr = "$currentStdErr$content`r`n"
         }
     }
-    
+
     return $hadOutput
 }
-        
+
 <#
 .SYNOPSIS
     Stops the stream reader and cleans up event registrations.
@@ -211,11 +211,11 @@ function Stop-JobOutputStreamReader {
         [Parameter(Mandatory = $true)]
         [hashtable]$ReaderHandle
     )
-    
+
     if (-not $ReaderHandle) { return }
-    
+
     $debugLog = $ReaderHandle.DebugLog
-    
+
     $writeDebug = {
         param($Message)
         if ($debugLog) {
@@ -223,7 +223,7 @@ function Stop-JobOutputStreamReader {
             [System.IO.File]::AppendAllText($debugLog, "[$timestamp] $Message`r`n")
         }
     }
-    
+
     try {
         # Unregister events
         if ($ReaderHandle.OutputId) {
