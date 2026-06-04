@@ -1775,7 +1775,7 @@ function Invoke-Job {
             # === Process real-time output ===
             if ($streamReader -and $outputQueue) {
                 # -WriteToUI will write next batch of output to console area
-                Process-JobOutputQueue -OutputQueue $outputQueue -ResultObject $result -WriteToUI $true
+                $null = Process-JobOutputQueue -OutputQueue $outputQueue -ResultObject $result -WriteToUI $true
             }
 
             # Let Windows process pending UI events (clicks, resizing, etc.)
@@ -1804,7 +1804,7 @@ function Invoke-Job {
 
         # === Final drain of output queue ===
         if ($streamReader -and $outputQueue) {
-            Process-JobOutputQueue -OutputQueue $outputQueue -ResultObject $result -WriteToUI $true
+            $null = Process-JobOutputQueue -OutputQueue $outputQueue -ResultObject $result -WriteToUI $true
         }
 
         # Determine success/failure for result object
