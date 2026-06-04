@@ -3161,6 +3161,7 @@ function Initialize-ListBox {
         $listBackgroundColor = Get-ThemeColor -PropertyName "list_background" # bg color of actual left panel
         $selectedItemBackgroundColor = Get-ThemeColor -PropertyName "list_background_selected" # highlighting color behind selected text
         $textColor = Get-ThemeColor -PropertyName "list_text" # text color of group items in left panel
+        $textColorDivider = Get-ThemeColor -PropertyName "list_text_divider"  # text color of divider (category items) in left panel
         $selectedTextColor = Get-ThemeColor -PropertyName "list_text_selected" # text color of selected item
 
         $index = $e.Index
@@ -3183,9 +3184,10 @@ function Initialize-ListBox {
         $bgBrush.Dispose()
 
         if ($item.Type -eq "category") {
+
             # Divider styling
             $font = New-Object System.Drawing.Font($sender.Font, [System.Drawing.FontStyle]::Bold)
-            $brush = [System.Drawing.Brushes]::Gray
+            $brush = New-Object System.Drawing.SolidBrush($textColorDivider)
             $format = New-Object System.Drawing.StringFormat
             $format.Alignment = [System.Drawing.StringAlignment]::Center
             $format.LineAlignment = [System.Drawing.StringAlignment]::Center
