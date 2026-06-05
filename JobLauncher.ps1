@@ -3778,8 +3778,13 @@ function Populate-LeftPanel {
 
     # == determine view to display == #
 
-    # default to flat
+    # set default value
+
     $view = "flat"
+    if ($script:HasCategories) {
+        # if has categories, default to hierarchical list
+        $view = "list"
+    }
 
     # User selection view toggle button always takes priority
     # (ensure state is set: is null initially before user click)
