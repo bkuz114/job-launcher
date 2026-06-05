@@ -134,6 +134,25 @@ $script:NavigationItems = $null             # Collection of all categories/group
                                             # ListBox (flat) left panel views.
 
 # =============================================================================
+# ERROR HINTS
+# =============================================================================
+
+# list of common errors failed jobs might dispaly, and helpful hints to dispaly in logs/console
+
+$script:ErrorHints = @{
+    "The system cannot find the file specified" = @"
+
+
+HINT: Check the 'command' field for this job in the JSON configuration file.
+The first word must be an executable in your PATH or a full path to an .exe.
+
+Example: "cmd.exe /c echo hello" (good)
+Instead of: "echo hello" (bad — 'echo' is a shell built-in, not an executable)
+
+"@
+}
+
+# =============================================================================
 # JSON LOADING
 # =============================================================================
 
@@ -1834,6 +1853,15 @@ function Invoke-Job {
         }
         if ([string]::IsNullOrWhiteSpace($result.LauncherMessage)) {
             $result.LauncherMessage = "Exception during job execution: $($_.Exception.Message)"
+
+            # check for common errors; add hint if found
+            foreach ($errorKey in $script:ErrorHints.Keys) {
+                if ($_.Exception.Message.Contains($errorKey)) {
+                    $result.LauncherMessage += $script:ErrorHints[$errorKey]
+                    break
+                }
+            }
+
             Append-JobLog -Path $Result.logFile -Content $Result.LauncherMessage
         }
         if ($result.ExitCode -eq $null) {
