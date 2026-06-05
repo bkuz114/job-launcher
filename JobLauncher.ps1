@@ -2667,14 +2667,17 @@ function Populate-FlatList {
 
     # Populate ListBox
     $script:FormControls.ListBox.Items.Clear()
-    foreach ($group in $script:NavigationItems) {
-        # You can add the $group objects directly as added a custom
-        # toString() function on them which makes .Label the string
-        # representation of the object. Doing this because when I used
-        # Initialize-ListBox to create the ListBox, the Add_Draw event
-        # screwed up width and height, and none of it was needed for
-        # the flat case anyway.
-        $null = $script:FormControls.ListBox.Items.Add($group)
+    foreach ($item in $script:NavigationItems) {
+        # skip categories; only build groups
+        if ($item.Type -eq "group") {
+            # You can add the group objects directly as added a custom
+            # toString() function on them which makes .Label the string
+            # representation of the object. Doing this because when I used
+            # Initialize-ListBox to create the ListBox, the Add_Draw event
+            # screwed up width and height, and none of it was needed for
+            # the flat case anyway.
+            $null = $script:FormControls.ListBox.Items.Add($item)
+        }
     }
 
     # Bind selection change event
@@ -2710,6 +2713,11 @@ function Populate-FlatList {
     Requires $script:FormControls.SplitContainer for auto-width adjustment.
 #>
 function Populate-TreeView {
+
+    # throw error if now hierarchical
+    if (-not $script:HasCategories) {
+        throw "Populate-TreeView: No categories in JSON -- can't populate tree view"
+    }
 
     # Remove existing ListBox if present
     if ($script:FormControls.ContainsKey('ListBox') -and $script:FormControls.ListBox) {
@@ -2788,6 +2796,11 @@ function Populate-TreeView {
     Creates $script:FormControls.ListBox and stores it for later access.
 #>
 function Populate-ListWithDividers {
+
+    # throw error if now hierarchical
+    if (-not $script:HasCategories) {
+        throw "Populate-ListWithDividers: No categories in JSON -- can't populate list with dividers"
+    }
 
     # Remove existing TreeView if present
     if ($script:FormControls.ContainsKey('TreeView') -and $script:FormControls.TreeView) {
@@ -3611,43 +3624,68 @@ function Populate-LeftPanel {
     # save initial state
     $currSelectedItem = $script:CurrentItem
 
-    # if JSON has "categories" key, create tree or list hierarchy based on "view" setting
-    if ($script:HasCategories) {
+    # == hierarchical view button              == #
+    # == (button for toggling list, tree mode) == #
+
+    $buttonExists = $script:FormControls.ContainsKey('ToggleButton')
+    $showButton = $false
+    $buttonState = $true
+
+    # == determine view to display == #
+
+    # default to flat
+    $view = "flat"
+
+    # User selection view toggle button always takes priority
+    # (ensure state is set: is null initially before user click)
+    if ($buttonExists -and $script:FormControls.ToggleButton -and $script:FormControls.ToggleButton.Tag -ne $null) {
+        $view = if ($script:FormControls.ToggleButton.Tag -eq $true) { "tree" } else { "list" }
+    } elseif ($script:Settings.PSObject.Properties['view'] -and $script:Settings.view) {
+        # user JSON setting
+        $view = $script:Settings.view
+    }
+
+    # if no categories, overwrite any configuration with flat view
+    if (-not $script:HasCategories) {
+        $view = "flat"
+    }
+
+    # == Build left panel based on view detected == #
+
+    switch ($view) {
+        "tree" {
+            Populate-TreeView
+            $showButton = $true
+            $buttonState = $true
+        }
+        "list" {
+            Populate-ListWithDividers
+            $showButton = $true
+            $buttonState = $false
+        }
+        "flat" {
+            Populate-FlatList
+            $showButton = $false
+        }
+        default {
+			# defensive only; should not get here.
+            throw "Populate-LeftPanel: Invalid view detected. Check JSON coniguration file; view can only be `"tree`", `"list`", or `"flat`""
+        }
+    }
+
+    # == Create and/or update hierarchical view button == #
+
+    if ($showButton) {
         # Create toggle button if it doesn't exist
-        if (-not $script:FormControls.ContainsKey('ToggleButton') -or -not $script:FormControls.ToggleButton) {
+        if (-not $buttonExists -or -not $script:FormControls.ToggleButton) {
             $toggleButton = Create-ToggleButton
             $null = $script:FormControls.LeftPanel.Controls.Add($toggleButton)
             $script:FormControls.ToggleButton = $toggleButton
         }
-
-        # Determine which view to use (default to "flat")
-        $view = "flat"
-
-        # User selection view toggle button always takes priority
-        # (ensure state is set: is null initially before user click)
-        if ($script:FormControls.ToggleButton -and $script:FormControls.ToggleButton.Tag -ne $null) {
-            $view = if ($script:FormControls.ToggleButton.Tag -eq $true) { "tree" } else { "flat" }
-        } elseif ($script:Settings.PSObject.Properties['view'] -and $script:Settings.view) {
-            $view = $script:Settings.view
-        } else {
-            $view = "flat"
-        }
-
-        $buttonState = $true
-        if ($view -eq "tree") {
-            Populate-TreeView
-            $buttonState = $true
-        } else {
-            Populate-ListWithDividers
-            $buttonState = $false
-        }
-        # Update initial button state if null
+        # update button only if hierarchical view is present and state is null
         if ($script:FormControls.ToggleButton -and $script:FormControls.ToggleButton.Tag -eq $null) {
             Set-ToggleButton -Button $script:FormControls.ToggleButton -State $buttonState
         }
-    } else {
-        # only groups
-        Populate-FlatList
     }
 
     Initialize-LeftPanel -Item $currSelectedItem
