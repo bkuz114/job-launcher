@@ -2440,12 +2440,14 @@ function Set-ToggleButton {
     Creates and displays job buttons for a selected group in the right panel.
 
 .DESCRIPTION
-    Clears all existing job buttons from the button panel, then iterates through
-    the jobs array of the provided group object. For each job, creates a new
-    Button control configured with the job's name, hover effects, and a click
-    handler that runs Invoke-Job. Stores each button in $script:JobButtons
-    hashtable keyed by job name for later state updates (enabling/disabling,
-    color changes).
+    Builds job buttons for a selected group in a temporary off-screen panel,
+    then swaps it with the existing panel. This eliminates flicker by ensuring
+    the new buttons are fully constructed before being displayed.
+
+    For each job, creates a new Button control configured with the job's name,
+    hover effects, and a click handler that runs Invoke-Job. Stores each button
+    in $script:JobButtons hashtable keyed by job name for later state updates
+    (enabling/disabling, color changes).
 
 .PARAMETER GroupItem
     A Group Item object created during JSON loading (in Load-HierarchicalConfig
@@ -2477,6 +2479,8 @@ function Set-ToggleButton {
       Invoke-Job requires the Job Item (rather than just the job json) so that calls
       to Get-JobWorkingDirectory, Get-JobTimeout will can traverse parent nodes in
       the json
+    - Implements double-buffering: builds buttons in a temporary off-screen panel,
+      then swaps with the existing panel to prevent UI flicker.
 #>
 function Update-ButtonsForGroup {
     param(
@@ -2489,15 +2493,22 @@ function Update-ButtonsForGroup {
         throw "Update-ButtonsForGroup: GroupItem is missing .Jobs property. Expected a valid Group Item with wrapped Job Items."
     }
 
-    # Clear existing buttons
-    $script:FormControls.ButtonPanel.Controls.Clear()
-    $script:JobButtons.Clear()
-
     # List of Job Items attached to the Group Item during JSON parsing
     $jobs = $GroupItem.JobItems
 
-    foreach ($job in $jobs) {
+    # Create a new panel off-screen (not yet added to parent)
+    $newPanel = New-Object System.Windows.Forms.FlowLayoutPanel
+    $newPanel.Dock = "Fill"
+    $newPanel.FlowDirection = "TopDown"
+    $newPanel.WrapContents = $true
+    $newPanel.AutoScroll = $true
+    $newPanel.Padding = New-Object System.Windows.Forms.Padding(5)
+    $newPanel.Visible = $false  # hidden until fully built
 
+    # Temporary hashtable for new buttons (to replace $script:JobButtons)
+    $newJobButtons = @{}
+
+    foreach ($job in $jobs) {
         # Get raw job JSON
         $rawJob = Get-JobConfig -JobItem $job
 
@@ -2506,7 +2517,7 @@ function Update-ButtonsForGroup {
         $btn = New-Object System.Windows.Forms.Button
         $btn.Text = $jobName
         $btn.Height = $UI_Button_Height
-        $btn.Width = $script:FormControls.ButtonPanel.Width - 20
+        $btn.Width = $newPanel.Width - 20
         $btn.TextAlign = "MiddleLeft"
         $btn.FlatStyle = "Flat"
         $btn.Margin = New-Object System.Windows.Forms.Padding($UI_Button_Margin)
@@ -2560,8 +2571,43 @@ function Update-ButtonsForGroup {
             Update-Status "Ready" $UI_Color_Background
         })
 
-        $null = $script:FormControls.ButtonPanel.Controls.Add($btn)
-        $script:JobButtons[$jobName] = $btn
+        $newPanel.Controls.Add($btn)
+        $newJobButtons[$jobName] = $btn
+    }
+
+    # Get the parent container (the TableLayoutPanel that holds ButtonPanel)
+    $parent = $script:FormControls.ButtonPanel.Parent
+    if ($parent -eq $null) {
+        throw "Update-ButtonsForGroup: ButtonPanel has no parent container. Cannot swap panels."
+    }
+
+    # Get the row and column position of the old panel
+    $row = $parent.GetRow($script:FormControls.ButtonPanel)
+    $col = $parent.GetColumn($script:FormControls.ButtonPanel)
+
+    # Remove old panel and dispose it (free memory)
+    $parent.Controls.Remove($script:FormControls.ButtonPanel)
+    $script:FormControls.ButtonPanel.Dispose()
+
+    # Add the new fully-built panel
+    $parent.Controls.Add($newPanel, $col, $row)
+    $newPanel.Visible = $true
+
+    # Update global references
+    $script:FormControls.ButtonPanel = $newPanel
+    $script:JobButtons = $newJobButtons
+
+    # Adjust button widths after panel is added (now it has a Width)
+    foreach ($btn in $script:JobButtons.Values) {
+        $btn.Width = $newPanel.Width - 20
+    }
+
+    # Apply current theme colors to the new buttons
+    $buttonColor = Get-ThemeColor -PropertyName "button"
+    $buttonTextColor = Get-ThemeColor -PropertyName "button_text"
+    foreach ($btn in $script:JobButtons.Values) {
+        $btn.BackColor = $buttonColor
+        $btn.ForeColor = $buttonTextColor
     }
 }
 
