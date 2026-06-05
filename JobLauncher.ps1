@@ -133,6 +133,7 @@ $script:NavigationItems = $null             # Collection of all categories/group
                                             # Used as the data source for BOTH TreeView (hierarchical) and
                                             # ListBox (flat) left panel views.
 $script:CurrentDisplayedGroup = $null       # currently display group (group whos jobs are in right panel).
+                                            # Used to revert when a category is clicked.
                                             # This is NOT redundant to CurrentItem as it could be a category
 
 # =============================================================================
@@ -2769,7 +2770,8 @@ function Populate-TreeView {
     $treeView.Add_AfterSelect({
         param($sender, $e)
         $node = $e.Node
-        if ($node.Tag -ne $null) {
+        # only call if this is a group - not category
+        if ($node.Tag -ne $null -and $node.Tag.Type -eq "group") {
             Set-Item -Item $node.Tag
         }
     })
@@ -2820,19 +2822,71 @@ function Populate-ListWithDividers {
         $null = $listBox.Items.Add($item)
     }
 
-    # Selection event
+    # === Change event for clicking item in list Box ===
+
+    # == Category selection hack (Part 1 of 2) ==
+    # == (please read) ===
+    #
+    # Issue: Want categories to be non-selectable headers, but ListBox
+    # has no native concept of non-selectable items. So when a user clicks
+    # a category, the ListBox selects and highlights it (triggering this change
+    # event), and deselects the previously selected group.
+    #
+    # We cannot suppress categories from being selected and triggering this event,
+    # but we can work around it.
+    #
+    # Below is part of a two-part strategy to make categories behave like
+    # non-selectable headers:
+    #
+    # 1. Functional (this change event):
+    #    If the clicked item is a category, immediately trigger a second change
+    #    event to reselect the previously selected group. This prevents the
+    #    current group from being deselected.
+    #    → Without this, even with the Visual change above, the currently
+    #      selected group would lose its highlighting (and with the Visual
+    #      change, it would appear like nothing is selected)
+    #
+    # 2. Visual (in Initialize-ListBox):
+    #    Categories are painted with unselected background regardless of
+    #    selection state. User never sees a category highlighted.
+    #
+    # Together, these give the illusion that categories are not selectable.
+    # See for more info: https://github.com/bkuz114/job-launcher/issues/9
+    #
+    # IMPORTANT: This change event is STILL NEEDED even if you no longer want to
+    # maintain the illusion that categories aren't selectable, because if a group
+    # is clicked, you still need to call Set-Item on it.
+
     $listBox.Add_SelectedIndexChanged({
         param($sender, $e)
         $selectedItem = $sender.SelectedItem
 
-        # only update if not currently displayed group to avoid rebuilding right panel
-        # Note: categories won't update right panel regardless.
-        if ($selectedItem -ne $script:CurrentDisplayedGroup) {
-            Set-Item -Item $selectedItem
+        # If category selected, immediately revert selection back to
+        # last selected group, else that group will be un-highlighted,
+        # and nothing will be highlighted (as categories have been
+        # styled to never appear highlighted)
+        if ($selectedItem.Type -eq "category") {
+            # Revert to last selected group if it exists (it should always exist
+            # because Initialize-LeftPanel selects the first group on startup).
+            if ($script:CurrentDisplayedGroup -ne $null) {
+                # trigger another change event to the last group (which has
+                # just been de-selected) to re-select it
+                $sender.SelectedItem = $script:CurrentDisplayedGroup
+            } else {
+                throw "No last selected group found when reverting from category selection. This should never happen. Check Initialize-LeftPanel and ensure a group is selected on startup."
+            }
+        } else {
+            # It's a group
 
-            # if this is a group, update it as currently dispalyed one now
-            if ($selectedItem.Type -eq "group") {
-                $script:CurrentDisplayedGroup = $selectedItem
+            # only update if not currently displayed group to avoid rebuilding right panel
+            # Note: categories won't update right panel regardless.
+            if ($selectedItem -ne $script:CurrentDisplayedGroup) {
+                Set-Item -Item $selectedItem
+
+                # update as currently dispalyed group
+                if ($selectedItem.Type -eq "group") {
+                    $script:CurrentDisplayedGroup = $selectedItem
+                }
             }
         }
     })
@@ -3158,6 +3212,11 @@ function Set-Item {
         [PSCustomObject]$Item
     )
 
+    # ignore category nodes
+    if ($Item.Type -ne "group") {
+        return
+    }
+
     # update current selected item
     $script:CurrentItem = $Item
 
@@ -3224,14 +3283,30 @@ function Initialize-ListBox {
         # check if item is selected
         $isSelected = ($e.State -band [System.Windows.Forms.DrawItemState]::Selected) -ne 0
 
-        # Create background color brush based on selection state
-        if ($isSelected) {
-            $bgBrush = New-Object System.Drawing.SolidBrush($selectedItemBackgroundColor)
-        } else {
-            $bgBrush = New-Object System.Drawing.SolidBrush($listBackgroundColor)
-        }
-        $e.Graphics.FillRectangle($bgBrush, $bounds)
-        $bgBrush.Dispose()
+        # == Category selection hack (Part 2 of 2) ==
+        #
+        # Issue: Want to make Categories non-selectable, but ListBox provides
+        # no way to do this, and no way to suppress click events.
+        #
+        # - Part 1 is in Populate-ListWithDividers (SelectedIndexChanged event)
+        #   It reverts selection back to the last selected group when a category is clicked. So:
+        #   - a category is briefly selected (and this DrawItem event is called)
+        #   - group is de-selected
+        #   - then the group is selected back (and this DrawItem event is called again)
+        # - Part 2 (this):
+        #   a. Categories are painted with unselected background regardless of selection state.
+        #      (to appear unselected during that brief selection state)
+        #   b. If a group is the currently displayed one (e.g. group highlighted before
+        #      the category is clicked) - highlight it. (this avoids a UI flicker
+        #      when the group is briefly de-selected before it is selected back)
+        #
+        # See the long comment there for full explanation, or reference GitHub issue:
+        # https://github.com/bkuz114/job-launcher/issues/9
+        #
+        # Note:
+        # - The if/else structure is still required for normal styling of both categories and groups.
+        #   Do not remove it.
+        #   The hack-specific part is painting categories with unselected background even when selected.
 
         if ($item.Type -eq "category") {
 
@@ -3242,6 +3317,16 @@ function Initialize-ListBox {
             $format.Alignment = [System.Drawing.StringAlignment]::Center
             $format.LineAlignment = [System.Drawing.StringAlignment]::Center
             $rectF = New-Object System.Drawing.RectangleF($bounds.X, $bounds.Y, $bounds.Width, $bounds.Height)
+
+            # paint bg color to match Left Panel bg color
+            # even when selected, to give illusion that
+            # not selected.
+            # Note: MUST CALL BEFORE PAINTING TEXT COLOR.
+            $bgBrush = New-Object System.Drawing.SolidBrush($listBackgroundColor)
+            $e.Graphics.FillRectangle($bgBrush, $bounds)
+            $bgBrush.Dispose()
+
+            # paint text color
             $e.Graphics.DrawString($item.Label, $font, $brush, $rectF, $format)
 
             # Prevent selection highlight
@@ -3252,11 +3337,18 @@ function Initialize-ListBox {
         } else {
 
             # Create brush based on selection state
-            if ($isSelected) {
+            $bgBrush = $null
+            if ($isSelected -or $item -eq $script:CurrentDisplayedGroup) {
                 $brush = New-Object System.Drawing.SolidBrush($selectedTextColor)
+                $bgBrush = New-Object System.Drawing.SolidBrush($selectedItemBackgroundColor)
             } else {
                 $brush = New-Object System.Drawing.SolidBrush($textColor)
+                $bgBrush = New-Object System.Drawing.SolidBrush($listBackgroundColor)
             }
+
+            # paint background
+            $e.Graphics.FillRectangle($bgBrush, $bounds)
+            $bgBrush.Dispose()
 
             # Draw the text using $brush
             $rectF = New-Object System.Drawing.RectangleF($bounds.X, $bounds.Y, $bounds.Width, $bounds.Height)
