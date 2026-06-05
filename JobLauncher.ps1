@@ -2821,12 +2821,8 @@ function Populate-ListWithDividers {
     # Selection event
     $listBox.Add_SelectedIndexChanged({
         param($sender, $e)
-
-        $selectedIndex = $sender.SelectedIndex
-        if ($selectedIndex -ge 0) {
-            $selectedItem = $sender.Items[$selectedIndex]
-            Set-Item -Item $selectedItem
-        }
+        $selectedItem = $sender.SelectedItem
+        Set-Item -Item $selectedItem
     })
 
     # Update width of left panel appropriately
