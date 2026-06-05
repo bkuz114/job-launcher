@@ -2421,7 +2421,6 @@ function Set-ToggleButton {
         [boolean]$State
     )
 
-    Write-Host "DEBUG: Set-ToggleButton $State"
     # State = True ==> set to tree view
     # State = False ==> set to flat view
     if ($State -eq $true) {
@@ -3995,9 +3994,6 @@ function Main {
 
     # Build GUI - this returns a hashtable with Form, ListBox, ButtonPanel
     $script:FormControls = Build-GUI
-
-    Write-Host "DEBUG: Build-GUI returned type: $($script:FormControls.GetType().FullName)"
-    Write-Host "DEBUG: Build-GUI returned value: $script:FormControls"
 
     # Verify we got valid controls
     if ($script:FormControls -isnot [hashtable]) {
