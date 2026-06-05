@@ -3668,7 +3668,7 @@ function Populate-LeftPanel {
             $showButton = $false
         }
         default {
-			# defensive only; should not get here.
+            # defensive only; should not get here.
             throw "Populate-LeftPanel: Invalid view detected. Check JSON coniguration file; view can only be `"tree`", `"list`", or `"flat`""
         }
     }
