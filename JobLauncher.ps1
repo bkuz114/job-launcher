@@ -1177,7 +1177,7 @@ function Set-JobResultProperty {
     # Check if property exists when FailIfMissing is specified
     if ($FailIfMissing) {
         # Delegate existence check to Get-JobResultProperty so that function is agnostic to which type of object Job results are
-        Get-JobResultProperty -JobResult $JobResult -Property $Property -FailIfMissing -ErrorContext $enhancedContext
+        $null = Get-JobResultProperty -JobResult $JobResult -Property $Property -FailIfMissing -ErrorContext $enhancedContext
     }
 
     # Set the property (creates new property if it doesn't exist and FailIfMissing is false)
