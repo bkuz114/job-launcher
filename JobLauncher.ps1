@@ -132,6 +132,8 @@ $script:NavigationItems = $null             # Collection of all categories/group
                                             # .Node (original JSON object), and .Parent (for groups only).
                                             # Used as the data source for BOTH TreeView (hierarchical) and
                                             # ListBox (flat) left panel views.
+$script:CurrentDisplayedGroup = $null       # currently display group (group whos jobs are in right panel).
+                                            # This is NOT redundant to CurrentItem as it could be a category
 
 # =============================================================================
 # ERROR HINTS
@@ -2822,7 +2824,17 @@ function Populate-ListWithDividers {
     $listBox.Add_SelectedIndexChanged({
         param($sender, $e)
         $selectedItem = $sender.SelectedItem
-        Set-Item -Item $selectedItem
+
+        # only update if not currently displayed group to avoid rebuilding right panel
+        # Note: categories won't update right panel regardless.
+        if ($selectedItem -ne $script:CurrentDisplayedGroup) {
+            Set-Item -Item $selectedItem
+
+            # if this is a group, update it as currently dispalyed one now
+            if ($selectedItem.Type -eq "group") {
+                $script:CurrentDisplayedGroup = $selectedItem
+            }
+        }
     })
 
     # Update width of left panel appropriately
