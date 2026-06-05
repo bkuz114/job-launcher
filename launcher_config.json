@@ -1,5 +1,5 @@
 {
-  "version": "2.0",
+  "version": "3.0",
   "settings": {
     "logs_directory": "C:\\tmp\\JobLauncherLogs",
     "theme": "default",
@@ -20,7 +20,7 @@
             },
             {
               "name": "Show Current Date and Time",
-              "command": "powershell.exe -Command \"Get-Date -Format 'yyyy-MM-dd HH:mm:ss'\""
+              "command": "cmd.exe /c echo %DATE% %TIME%"
             },
             {
               "name": "List C:\\ Root Directory (First 20 items)",
@@ -42,45 +42,105 @@
       ]
     },
     {
-      "name": "System",
+      "name": "System Information",
       "groups": [
         {
-          "name": "System Information",
+          "name": "OS & Hardware",
           "jobs": [
             {
               "name": "Show Windows Version",
               "command": "cmd.exe /c ver"
             },
             {
+              "name": "Show Computer Name",
+              "command": "cmd.exe /c echo %COMPUTERNAME%"
+            },
+            {
+              "name": "Show Current Username",
+              "command": "cmd.exe /c echo %USERNAME%"
+            },
+            {
               "name": "Show Environment Variables (PATH sample)",
               "command": "cmd.exe /c echo %PATH%"
             },
             {
-              "name": "Get Current Username",
-              "command": "powershell.exe -Command \"Write-Host 'Current user:' $env:USERNAME\""
+              "name": "Show Processor Name",
+              "command": "cmd.exe /c echo %PROCESSOR_IDENTIFIER%"
             },
             {
-              "name": "Show Computer Name",
-              "command": "powershell.exe -Command \"Write-Host 'Computer name:' $env:COMPUTERNAME\""
-            },
-            {
-              "name": "List Running Processes (First 10)",
-              "command": "powershell.exe -Command \"Get-Process | Select-Object -First 10 Name, CPU | Format-Table -AutoSize\"",
-              "timeout_seconds": 20
+              "name": "Show Number of Processors",
+              "command": "cmd.exe /c echo %NUMBER_OF_PROCESSORS%"
             }
           ]
         },
         {
-          "name": "Network Info",
+          "name": "Disk & Memory",
           "jobs": [
             {
-              "name": "Show IP Configuration (IPv4 only)",
-              "command": "cmd.exe /c ipconfig | findstr IPv4",
-              "timeout_seconds": 15
+              "name": "Show C: Drive Free Space (GB)",
+              "command": "cmd.exe /c dir C:\\"
             },
             {
-              "name": "Ping Localhost (4 packets)",
+              "name": "Show All Drives",
+              "command": "cmd.exe /c wmic logicaldisk get name, size, freespace"
+            }
+          ]
+        },
+        {
+          "name": "Process & Services",
+          "jobs": [
+            {
+              "name": "List Running Processes (First 10)",
+              "command": "cmd.exe /c tasklist | powershell -Command \"$input | Select-Object -First 12\"",
+              "timeout_seconds": 10
+            },
+            {
+              "name": "Show Chrome Processes Count",
+              "command": "cmd.exe /c tasklist /FI \"IMAGENAME eq chrome.exe\" | find /c /v \"\""
+            },
+            {
+              "name": "Show Running Services",
+              "command": "cmd.exe /c net start | findstr /v \"The following\" | findstr /v \"^\\.$\" | findstr /v \"^$\""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Network",
+      "groups": [
+        {
+          "name": "Connection Info",
+          "jobs": [
+            {
+              "name": "Show IP Configuration",
+              "command": "cmd.exe /c ipconfig"
+            },
+            {
+              "name": "Show IP Address Only",
+              "command": "cmd.exe /c ipconfig | findstr IPv4"
+            },
+            {
+              "name": "Show Wireless Networks",
+              "command": "cmd.exe /c netsh wlan show profiles"
+            },
+            {
+              "name": "Show ARP Table",
+              "command": "cmd.exe /c arp -a"
+            }
+          ]
+        },
+        {
+          "name": "DNS & Tests",
+          "jobs": [
+            {
+              "name": "Ping Localhost",
               "command": "cmd.exe /c ping 127.0.0.1 -n 4",
+              "timeout_seconds": 10
+            },
+            {
+              "name": "Ping Google DNS",
+              "command": "cmd.exe /c ping 8.8.8.8 -n 4",
               "timeout_seconds": 10
             },
             {
@@ -93,13 +153,62 @@
       ]
     },
     {
+      "name": "File & Directory",
+      "groups": [
+        {
+          "name": "Directory Info",
+          "jobs": [
+            {
+              "name": "Show Temp Directory Path",
+              "command": "cmd.exe /c echo %TEMP%"
+            },
+            {
+              "name": "List Temp Files (First 10)",
+              "command": "cmd.exe /c dir %TEMP% /b"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Time & Display",
+      "groups": [
+        {
+          "name": "Date & Time",
+          "jobs": [
+            {
+              "name": "Show Current Date",
+              "command": "cmd.exe /c date /t"
+            },
+            {
+              "name": "Show Current Time",
+              "command": "cmd.exe /c time /t"
+            },
+            {
+              "name": "Show Timezone",
+              "command": "cmd.exe /c tzutil /g"
+            }
+          ]
+        },
+        {
+          "name": "Power & Display",
+          "jobs": [
+            {
+              "name": "Show Active Power Plan",
+              "command": "cmd.exe /c powercfg /getactivescheme"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "Detached Jobs",
       "groups": [
         {
-          "name": "Application Tests",
+          "name": "Applications",
           "jobs": [
             {
-              "name": "Notepad - No Args",
+              "name": "Notepad",
               "command": "notepad.exe",
               "detached": true
             },
@@ -116,7 +225,7 @@
           ]
         },
         {
-          "name": "Console Output Tests",
+          "name": "Console Output (Detached)",
           "jobs": [
             {
               "name": "Echo Hello (cmd)",
@@ -134,59 +243,25 @@
               "detached": true
             }
           ]
-        },
-        {
-          "name": "Long-running Tests",
-          "jobs": [
-            {
-              "name": "Ping (10 seconds)",
-              "command": "ping -n 10 127.0.0.1",
-              "detached": true
-            }
-          ]
         }
       ]
     },
     {
-      "name": "Long-Running Tests",
+      "name": "Testing",
       "groups": [
         {
-          "name": "Sleep with console",
+          "name": "Timeout & Kill",
           "jobs": [
             {
-              "name": "Slow Job (Test Timeout - 25s)",
-              "command": "powershell.exe -Command \"1..25 | ForEach-Object { Write-Host 'Step' $_; Start-Sleep -Seconds 1 }; Write-Host 'Done'\"",
+              "name": "Countdown 30s (Test Completion)",
+              "command": "cmd.exe /c timeout /t 30 /nobreak",
               "timeout_seconds": 60
             },
             {
-              "name": "Very Slow Job (Test Kill - 60s)",
-              "command": "powershell.exe -Command \"1..60 | ForEach-Object { Write-Host 'Waiting...' $_; Start-Sleep -Seconds 1 }; Write-Host 'Finished'\"",
-              "timeout_seconds": 70
-            }
-          ]
-        },
-        {
-          "name": "Networking (Ping)",
-          "jobs": [
-            {
-              "name": "Ping (10 seconds)",
-              "command": "ping -n 10 127.0.0.1"
+              "name": "Infinite Loop (Test Kill Button)",
+              "command": "cmd.exe /c ping -t 127.0.0.1",
+              "timeout_seconds": 300
             },
-            {
-              "name": "Ping (10 seconds) (detached)",
-              "command": "ping -n 10 127.0.0.1",
-              "detached": true
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "Tests",
-      "groups": [
-        {
-          "name": "Test - Timeout & Kill",
-          "jobs": [
             {
               "name": "Slow Job (Test Timeout - 25s)",
               "command": "powershell.exe -Command \"1..25 | ForEach-Object { Write-Host 'Step' $_; Start-Sleep -Seconds 1 }; Write-Host 'Done'\"",
@@ -210,27 +285,34 @@
           ]
         },
         {
-          "name": "Test - Error Handling",
+          "name": "Error Handling",
           "jobs": [
             {
-              "name": "Missing Working Directory (Should Fail Fast)",
+              "name": "Missing Executable (Triggers Hint)",
+              "command": "imaginary.exe"
+            },
+            {
+              "name": "Missing Working Directory (Fast Fail)",
               "command": "cmd.exe /c echo This should not run",
-              "working_directory": "C:\\ThisDirectoryDoesNotExist_ABCDEF",
-              "timeout_seconds": 5
+              "working_directory": "C:\\ThisDirectoryDoesNotExist_ABCDEF"
             },
             {
-              "name": "Long Running (Kill Button Test - 120s)",
-              "command": "powershell.exe -Command \"1..120 | ForEach-Object { Write-Host 'Alive at second' $_; Start-Sleep -Seconds 1 }\"",
-              "timeout_seconds": 120
-            },
+              "name": "Non-zero Exit Code",
+              "command": "cmd.exe /c exit 1"
+            }
+          ]
+        },
+        {
+          "name": "Detached Tests",
+          "jobs": [
             {
-              "name": "Non-existent Command (Detached)",
-              "command": "notexist.exe",
+              "name": "Detached Notepad",
+              "command": "notepad.exe",
               "detached": true
             },
             {
-              "name": "Detaed Invalid Path",
-              "command": "notepad.exe \"Z:\\Invalid\\Path\\file.txt\"",
+              "name": "Detached Missing Executable",
+              "command": "nonexistent.exe",
               "detached": true
             }
           ]
