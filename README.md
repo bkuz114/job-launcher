@@ -56,30 +56,185 @@ Now double‑click the shortcut to launch – no console window, no admin prompt
 
 ## Configuration
 
-Edit `launcher_config.json`. Minimal example:
+Edit `launcher_config.json` to define your jobs, groups, and categories. The configuration supports two structures: **flat** (groups only) or **hierarchical** (categories containing groups).
+
+### Flat Structure (Groups Only)
+
+Use this when you have a simple set of jobs without category organization.
 
 ```json
 {
   "settings": {
-    "default_timeout_seconds": 60
+    "default_timeout_seconds": 60,
+    "default_working_directory": "C:\\scripts",
+    "theme": "default"
   },
-  "jobs": [
+  "groups": [
     {
-      "name": "Build Project",
-      "command": "msbuild.exe MyProject.sln /p:Configuration=Release",
-      "group": "Build"
+      "name": "Build Tools",
+      "jobs": [
+        {
+          "name": "Build Project",
+          "command": "msbuild.exe MyProject.sln /p:Configuration=Release"
+        },
+        {
+          "name": "Run Tests",
+          "command": "dotnet test",
+          "timeout_seconds": 120
+        }
+      ]
     },
     {
-      "name": "Deploy to Staging",
-      "command": "robocopy C:\\source \\\\server\\share /MIR",
-      "group": "Deploy",
-      "timeout_seconds": 300
+      "name": "Deployment",
+      "working_directory": "C:\\deploy",
+      "jobs": [
+        {
+          "name": "Deploy to Staging",
+          "command": "robocopy C:\\source \\\\server\\share /MIR"
+        }
+      ]
     }
   ]
 }
 ```
 
-See `launcher_config.json` in the repo for a complete example with test commands.
+### Hierarchical Structure (Categories + Groups)
+
+Use this when you want to organize groups under category headers. Categories appear in the left panel as bold, centered dividers (in `"list"` view) or as expandable parent nodes (in `"tree"` view).
+
+```json
+{
+  "settings": {
+    "default_timeout_seconds": 60,
+    "theme": "dark",
+    "view": "list"
+  },
+  "categories": [
+    {
+      "name": "Development",
+      "theme": "ocean",
+      "groups": [
+        {
+          "name": "Build Tools",
+          "jobs": [
+            {
+              "name": "Build Project",
+              "command": "msbuild.exe MyProject.sln"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Operations",
+      "working_directory": "C:\\ops",
+      "groups": [
+        {
+          "name": "Backup",
+          "jobs": [
+            {
+              "name": "Full Backup",
+              "command": "robocopy C:\\data D:\\backup /MIR"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+### Settings Object
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `default_timeout_seconds` | integer | Required | Default timeout (seconds) for jobs that don't specify their own |
+| `default_working_directory` | string | Script directory | Default working directory for jobs without a path defined |
+| `theme` | string | `"default"` | Name of the theme to use (must match a key in `themes.json`) |
+| `view` | string | `"flat"` | Left panel presentation for hierarchical JSON. Values: `"tree"` (TreeView), `"list"` (ListBox with category dividers), `"flat"` (groups only, no categories). Ignored for flat JSON. |
+| `logs_directory` | string | `".\Logs"` | Directory where job logs are written. Falls back to `%TEMP%\JobLauncherLogs` if inaccessible. |
+
+---
+
+### Schema Reference
+
+**Allowed nodes and their properties:**
+
+| Node Type | Allowed Fields | Required |
+|-----------|----------------|----------|
+| **Job** | `name`, `command`, `working_directory`, `timeout_seconds`, `detached` | `name`, `command` |
+| **Group** | `name`, `jobs`, `working_directory`, `timeout_seconds`, `theme` | `name`, `jobs` |
+| **Category** | `name`, `groups`, `working_directory`, `timeout_seconds`, `theme` | `name`, `groups` |
+
+- `name` — Display name (string)
+- `command` — Command line to execute (string). First word must be an executable in PATH or a full path.
+- `working_directory` — Directory where the command runs (string)
+- `timeout_seconds` — Maximum runtime before job is killed (integer)
+- `theme` — Theme name that applies to this node and its children (string)
+- `detached` — If `true`, runs the command without waiting for completion (boolean). Default `false`.
+- `jobs` — Array of job objects (array)
+- `groups` — Array of group objects (array)
+
+---
+
+### Inheritance Hierarchy
+
+Settings cascade from most specific to least specific. For `working_directory`, `timeout_seconds`, and `theme`:
+
+1. **Job** — defined directly on the job (highest priority)
+2. **Parent Group** — defined on the containing group
+3. **Parent Category** — defined on the containing category (hierarchical JSON only)
+4. **Settings** — defined in the `settings` object
+5. **Fallback** — script default (working directory = script directory, timeout = `default_timeout_seconds`, theme = `"default"`)
+
+**Example of inheritance:**
+
+```json
+{
+  "settings": {
+    "default_working_directory": "C:\\global",
+    "default_timeout_seconds": 60
+  },
+  "categories": [
+    {
+      "name": "Database",
+      "working_directory": "C:\\db",
+      "groups": [
+        {
+          "name": "Backup",
+          "timeout_seconds": 300,
+          "jobs": [
+            {
+              "name": "Full Backup",
+              "command": "backup.exe --full"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+In this example:
+- "Full Backup" runs in `C:\db` (from category), with a 300-second timeout (from group)
+- The `default_working_directory` and `default_timeout_seconds` are overridden at higher levels
+
+---
+
+### Left Panel Views (Hierarchical JSON Only)
+
+The `view` setting controls how categories and groups appear:
+
+| View | Appearance | Toggle Button |
+|------|------------|----------------|
+| `"tree"` | TreeView with expandable/collapsible categories | Yes (switches to `"list"`) |
+| `"list"` | ListBox with bold, centered category dividers | Yes (switches to `"tree"`) |
+| `"flat"` | ListBox with groups only (categories hidden) | No |
+
+For flat JSON (no `categories` key), the left panel always shows a simple ListBox with groups. The `view` setting is ignored.
 
 ## Logs
 
