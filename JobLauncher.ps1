@@ -108,10 +108,11 @@ $LogRetentionDays = 30
 $LogIncludeEnvironmentInfo = $true
 $LogTimestampEntries = $true
 
-# --- Default Paths ---
+# --- Default Values ---
 $DefaultConfigPath = "launcher_config.json"
 $DefaultLogsDirectoryName = "Logs"  # Name of default log folder (relative to script; used if JSON doesn't specify) 
 $DefaultLogsDirectory = Join-Path -Path (Split-Path -Path $script:MyInvocation.MyCommand.Path -Parent) -ChildPath $DefaultLogsDirectoryName
+$DefaultTimeoutSeconds = 30
 
 # =============================================================================
 # END USER CONFIGURABLE SETTINGS
@@ -1429,8 +1430,13 @@ function Get-JobTimeout {
         return $JobItem.ParentCategory.timeout_seconds
     }
 
-    # 5. Global settings fallback
-    return $script:Settings.default_timeout_seconds
+    # 5. default_timeout_seconds in "settings" of job configuration JSON
+    if ($script:Settings.PSObject.Properties['default_timeout_seconds'] -and $script:Settings.default_timeout_seconds) {
+        return $script:Settings.default_timeout_seconds
+    }
+
+    # 6. default_timeout_seconds of script
+    return $DefaultTimeoutSeconds
 }
 
 <#
