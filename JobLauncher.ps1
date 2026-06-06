@@ -2219,43 +2219,6 @@ function Apply-Theme {
 
 <#
 .SYNOPSIS
-    Initializes the global theme at script startup using settings.theme from JSON.
-
-.DESCRIPTION
-    Called once from Main() before building the UI. Reads the global
-    settings.theme property (if present) and activates it via Set-Theme.
-    If no theme is specified in JSON, defaults to $script:FallbackThemeName.
-
-    This function does not return a value. It sets $script:CurrentThemeName
-    and $script:CurrentThemePalette globally.
-
-.EXAMPLE
-    Initialize-Theme
-
-.NOTES
-    Uses Set-Theme to apply the theme. Throws an error if the specified
-    theme name does not exist in $Script:Themes.
-#>
-function Initialize-Theme {
-    # Resolve theme name (group > settings > $script:FallbackThemeName)
-    $initialThemeName = $script:FallbackThemeName
-
-    if ($script:Settings.PSObject.Properties['theme'] -and $script:Settings.theme) {
-        $initialThemeName = $script:Settings.theme
-    }
-
-    # Validate theme exists
-    if ($Script:Themes.ContainsKey($initialThemeName)) {
-        Set-Theme $initialThemeName
-        Write-Host "DEBUG: initial theme set to: $initialThemeName"
-    } else {
-        Write-Host "WARNING: Theme '$initialThemeName' not found. Fallback to fallback theme ($script:FallbackThemeName)."
-        Set-Theme $script:FallbackThemeName
-    }
-}
-
-<#
-.SYNOPSIS
     Determines the theme name for a specific item (Category or Group) based on configuration.
 
 .DESCRIPTION
@@ -3296,13 +3259,16 @@ function Set-Item {
     # update current selected item
     $script:CurrentItem = $Item
 
+    # Get the theme name and set it
+    # NOTE: Must call befoe Update-ButtonsForGroup
+    # to ensure theme pallette set
+    $itemTheme = Get-ItemTheme -Item $Item
+    Set-Theme -ThemeName $itemTheme
+
     if ($Item.Type -eq "group") {
         # Create buttons for this group
         Update-ButtonsForGroup -GroupItem $Item
     }
-
-    # Get the theme name and set it
-    $itemTheme = Get-ItemTheme -Item $Item
 
     # Apply theme (panel background, any other UI decorations)
     Apply-Theme -themeName $itemTheme
@@ -4202,9 +4168,6 @@ function Main {
 
     # Load themes from themes.json (or use built-in default)
     Load-Themes
-
-    # Set intial theme
-    Initialize-Theme
 
     Write-Host "DEBUG: About to call Build-GUI"
 
