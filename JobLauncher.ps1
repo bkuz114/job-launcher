@@ -3325,7 +3325,6 @@ function Create-ThemeDropdown {
     # is temporarily prevented; reset will put it back)
     $null = $themeCombo.Items.Add("---------------")
     $null = $themeCombo.Items.Add("Reset")
-    $themeCombo.SelectedItem = $script:CurrentThemeName
 
     $themeCombo.Add_SelectedIndexChanged({
         # global boolean to commnicate that this change
