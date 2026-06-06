@@ -40,8 +40,8 @@ $script:SuppressThemeDropdownEvent = $false
 # need to prevent group switching JSON from overriding their selection
 $script:UserSelectedTheme = $null
 
-# Built-in default theme (always available)
-$script:DefaultTheme = @{
+# Built-in fallback theme (always available)
+$script:FallbackTheme = @{
     form_background   = "#F0F0F0"
     toolbar_background = "#F0F0F0"
     toolbar_text      = "#000000"
@@ -65,10 +65,10 @@ $script:DefaultTheme = @{
     status_running    = "#FFC107"
 }
 
-# name for this default theme
+# name for this fallback theme
 # (will be added into theme dropdown;
 # can also be specified in JSON config)
-$script:DefaultThemeName = "default"
+$script:FallbackThemeName = "default"
 
 # =============================================================================
 # USER CONFIGURABLE SETTINGS
@@ -2009,7 +2009,7 @@ function Load-Themes {
 
     # Initialize themes hashtable with built-in default
     $script:Themes = @{
-        $script:DefaultThemeName = $script:DefaultTheme
+        $script:FallbackThemeName = $script:FallbackTheme
     }
 
     # Path to themes.json
@@ -2088,7 +2088,7 @@ function Get-ThemeColor {
     - Status label text
     - All job buttons (background, text, and hover states)
 
-    If a group specifies a theme that doesn't exist, falls back to $script:DefaultThemeName
+    If a group specifies a theme that doesn't exist, falls back to $script:FallbackThemeName
     and logs a warning. Missing color properties within a theme fall back to
     the default theme's values via Get-ThemeColor.
 
@@ -2218,7 +2218,7 @@ function Apply-Theme {
 .DESCRIPTION
     Called once from Main() before building the UI. Reads the global
     settings.theme property (if present) and activates it via Set-Theme.
-    If no theme is specified in JSON, defaults to $script:DefaultThemeName.
+    If no theme is specified in JSON, defaults to $script:FallbackThemeName.
 
     This function does not return a value. It sets $script:CurrentThemeName
     and $script:CurrentThemePalette globally.
@@ -2231,8 +2231,8 @@ function Apply-Theme {
     theme name does not exist in $Script:Themes.
 #>
 function Initialize-Theme {
-    # Resolve theme name (group > settings > $script:DefaultThemeName)
-    $initialThemeName = $script:DefaultThemeName
+    # Resolve theme name (group > settings > $script:FallbackThemeName)
+    $initialThemeName = $script:FallbackThemeName
 
     if ($script:Settings.PSObject.Properties['theme'] -and $script:Settings.theme) {
         $initialThemeName = $script:Settings.theme
@@ -2243,8 +2243,8 @@ function Initialize-Theme {
         Set-Theme $initialThemeName
         Write-Host "DEBUG: initial theme set to: $initialThemeName"
     } else {
-        Write-Host "WARNING: Theme '$initialThemeName' not found. Fallback to default."
-        Set-Theme $script:DefaultThemeName
+        Write-Host "WARNING: Theme '$initialThemeName' not found. Fallback to fallback theme ($script:FallbackThemeName)."
+        Set-Theme $script:FallbackThemeName
     }
 }
 
@@ -2260,7 +2260,7 @@ function Initialize-Theme {
            a Category, or parent Category's if Item is a Group)
            (if defined in JSON)
         4. Global 'settings.theme' (if defined in JSON)
-        5. Falls back to $script:DefaultThemeName
+        5. Falls back to $script:FallbackThemeName
 
     This function performs validation only to the extent of checking
     property existence in the PSCustomObject from JSON. It does NOT
@@ -2297,7 +2297,7 @@ function Get-ItemTheme {
         return $script:UserSelectedTheme
     }
 
-    # Resolve theme name (group > category > settings > $script:DefaultThemeName)
+    # Resolve theme name (group > category > settings > $script:FallbackThemeName)
     if ($Item.PSObject.Properties["Node"] -and $Item.Node.PSObject.Properties['theme'] -and $Item.Node.theme) {
         # own "theme" property (regardless if Category or Group)
         return $Item.Node.theme
@@ -2310,7 +2310,7 @@ function Get-ItemTheme {
         # JSON global theme in "settings"
         return $script:Settings.theme
     }
-    return $script:DefaultThemeName
+    return $script:FallbackThemeName
 }
 
 <#
