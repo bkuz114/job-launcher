@@ -3284,6 +3284,88 @@ function Set-Item {
 
 <#
 .SYNOPSIS
+    Creates and configures the theme selection dropdown control.
+
+.DESCRIPTION
+    Builds a ComboBox populated with all available theme names from
+    $Script:Themes, plus a separator and a "Reset" option. Configures
+    the dropdown style and event handler for theme switching.
+
+    The event handler manages:
+    - Programmatic suppression via $script:SuppressThemeDropdownEvent
+    - Ignoring the separator line
+    - Reset functionality (clears user theme override)
+    - Normal theme selection (sets user override and applies theme)
+
+.OUTPUTS
+    [System.Windows.Forms.ComboBox] - Configured theme dropdown control.
+
+.NOTES
+    The caller is responsible for:
+    - Adding the returned ComboBox to a parent container
+    - Storing the reference in $script:ThemeCombo
+    - Adding it to the appropriate UI panel
+#>
+function Create-ThemeDropdown {
+
+    $themeCombo = New-Object System.Windows.Forms.ComboBox
+    $themeCombo.DropDownStyle = "DropDownList"
+    $themeCombo.Width = 100
+    $themeCombo.DropDownHeight = 400
+    $themeCombo.IntegralHeight = $false
+
+    foreach ($themeName in $Script:Themes.Keys | Sort-Object) {
+        $null = $themeCombo.Items.Add($themeName)
+    }
+    # add a separator that does nothing, then reset
+    # option that will reset back to allowing JSON theme
+    # selection (e.g. that if a user clicks a new Group or
+    # Category with a theme set, it will switch to that --
+    # when a user has selected from the dropdown that functionality
+    # is temporarily prevented; reset will put it back)
+    $null = $themeCombo.Items.Add("---------------")
+    $null = $themeCombo.Items.Add("Reset")
+    $themeCombo.SelectedItem = $script:CurrentThemeName
+
+    $themeCombo.Add_SelectedIndexChanged({
+        # global boolean to commnicate that this change
+        # event was triggered programmatically to ONLY
+        # change the displayed option (not via
+        # user selection)
+        if ($script:SuppressThemeDropdownEvent) {
+            return
+        }
+
+        $selected = $this.SelectedItem.ToString()
+        if ($selected.Contains("---")) {
+            # Ignore selection, revert to previous value
+            Set-Dropdown -Dropdown $this -NewValue $script:CurrentThemeName
+            return
+        } elseif ($selected -eq "Reset") {
+            # Reset selected:
+            # get theme for currently selected item and reset to that
+
+            # Reset global boolean UserSelectedTheme
+            # (Get-ItemTheme checks this boolean and if set it
+            # won't update Group / Category themes when selected)
+            $script:UserSelectedTheme = $null
+            # apply theme of currently selected Item
+            $themeToApply = Get-ItemTheme -Item $script:CurrentItem
+            Apply-Theme -themeName $themeToApply
+            return
+        } else {
+            # Regular user selection: apply theme and indicate user selection
+            Apply-Theme -themeName $selected
+            # set user selected theme so group switching won't override it
+            $script:UserSelectedTheme = $this.SelectedItem.ToString()
+        }
+    })
+
+    return $themeCombo
+}
+
+<#
+.SYNOPSIS
     Creates and configures the ListBox with owner-draw support for dividers.
 .DESCRIPTION
     Sets DrawMode to OwnerDrawFixed and attaches the DrawItem event handler.
@@ -3485,59 +3567,9 @@ function Initialize-Toolbar {
     $themeLabel.Text = "Theme:"
     $themeLabel.AutoSize = $true
 
-    $themeCombo = New-Object System.Windows.Forms.ComboBox
-    $themeCombo.DropDownStyle = "DropDownList"
-    $themeCombo.Width = 100
-    $themeCombo.DropDownHeight = 400
-    $themeCombo.IntegralHeight = $false
-
-    foreach ($themeName in $Script:Themes.Keys | Sort-Object) {
-        $null = $themeCombo.Items.Add($themeName)
-    }
-    # add a separator that does nothing, then reset
-    # option that will reset back to allowing JSON theme
-    # selection (e.g. that if a user clicks a new Group or
-    # Category with a theme set, it will switch to that --
-    # when a user has selected from the dropdown that functionality
-    # is temporarily prevented; reset will put it back)
-    $null = $themeCombo.Items.Add("---------------")
-    $null = $themeCombo.Items.Add("Reset")
-    $themeCombo.SelectedItem = $script:CurrentThemeName
+    # === Create theme dropdown ==
+    $themeCombo = Create-ThemeDropdown
     $script:ThemeCombo = $themeCombo
-
-    $themeCombo.Add_SelectedIndexChanged({
-        # global boolean to commnicate that this change
-        # event was triggered programmatically to ONLY
-        # change the displayed option (not via
-        # user selection)
-        if ($script:SuppressThemeDropdownEvent) {
-            return
-        }
-
-        $selected = $this.SelectedItem.ToString()
-        if ($selected.Contains("---")) {
-            # Ignore selection, revert to previous value
-            Set-Dropdown -Dropdown $this -NewValue $script:CurrentThemeName
-            return
-        } elseif ($selected -eq "Reset") {
-            # Reset selected:
-            # get theme for currently selected item and reset to that
-
-            # Reset global boolean UserSelectedTheme
-            # (Get-ItemTheme checks this boolean and if set it
-            # won't update Group / Category themes when selected)
-            $script:UserSelectedTheme = $null
-            # apply theme of currently selected Item
-            $themeToApply = Get-ItemTheme -Item $script:CurrentItem
-            Apply-Theme -themeName $themeToApply
-            return
-        } else {
-            # Regular user selection: apply theme and indicate user selection
-            Apply-Theme -themeName $selected
-            # set user selected theme so group switching won't override it
-            $script:UserSelectedTheme = $this.SelectedItem.ToString()
-        }
-    })
 
     $null = $themePanel.Controls.Add($themeLabel)
     $null = $themePanel.Controls.Add($themeCombo)
