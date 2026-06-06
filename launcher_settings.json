@@ -1,0 +1,6 @@
+{
+  "theme": "warm_pastels",
+  "logs_directory": "",
+  "job_configs_directory": ".\\job_configs",
+  "default_config": "launcher_config"
+}

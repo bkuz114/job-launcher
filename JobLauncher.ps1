@@ -109,7 +109,8 @@ $LogIncludeEnvironmentInfo = $true
 $LogTimestampEntries = $true
 
 # --- Default Values ---
-$DefaultConfigPath = "launcher_config.json"
+$DefaultSettingsPath = "launcher_settings.json"  # Path to launcher settings
+$DefaultJobConfigsDirectory = ".\\job_configs"   # default dir for job JSON files (can be overwritten in launcher_settings.json)
 $DefaultLogsDirectoryName = "Logs"  # Name of default log folder (relative to script; used if JSON doesn't specify) 
 $DefaultLogsDirectory = Join-Path -Path (Split-Path -Path $script:MyInvocation.MyCommand.Path -Parent) -ChildPath $DefaultLogsDirectoryName
 $DefaultTimeoutSeconds = 30
@@ -126,7 +127,8 @@ $DefaultTimeoutSeconds = 30
 $script:CurrentRunningJob = $null           # Hashtable with: Process, JobName, Button, StartTime
 $script:CurrentItem = $null                 # Curr selected group or category (for preserving through view toggles)
 $script:HasCategories = $false              # If Parsed JSON has top level "categories"
-$script:Settings = $null                    # Parsed JSON settings object
+$script:LauncherSettings = $null            # Parsed JSON settings object from launcher config
+$script:Settings = $null                    # Parsed JSON settings object from currently selected config
 $script:OutputTextBox = $null               # Reference to UI control
 $script:StatusLabel = $null                 # Reference to UI control
 $script:JobButtons = @{}                    # Dictionary mapping job name to button control
@@ -141,6 +143,15 @@ $script:NavigationItems = $null             # Collection of all categories/group
 $script:CurrentDisplayedGroup = $null       # currently display group (group whos jobs are in right panel).
                                             # Used to revert when a category is clicked.
                                             # This is NOT redundant to CurrentItem as it could be a category
+
+# =============================================================================
+# GLOBAL STATE FOR CONFIG MANAGEMENT
+# =============================================================================
+
+$script:AvailableConfigs = @{}        # Hashtable of parsed configs (key = config name)
+$script:CurrentConfigName = $null     # Currently active config name
+$script:ConfigDropdown = $null        # Reference to config dropdown control
+$script:SuppressConfigEvent = $false   # Prevents recursive config dropdown event
 
 # =============================================================================
 # ERROR HINTS
@@ -164,6 +175,214 @@ Instead of: "echo hello" (bad — 'echo' is a shell built-in, not an executable)
 # =============================================================================
 # JSON LOADING
 # =============================================================================
+
+<#
+.SYNOPSIS
+    Reads and parses the launcher settings JSON file.
+
+.DESCRIPTION
+    Loads launcher_settings.json from the specified path, parses it into
+    a PSCustomObject, and returns it. Displays a message box and returns
+    $false if the file is missing or invalid.
+
+.PARAMETER ConfigPath
+    Full path to the launcher_settings.json file.
+
+.OUTPUTS
+    [PSCustomObject] - Parsed settings on success.
+    [bool] $false - If the file is missing or parsing fails.
+
+.EXAMPLE
+    $settings = Load-LauncherSettings -ConfigPath ".\launcher_settings.json"
+    if ($settings -eq $false) { exit 1 }
+
+.NOTES
+    The caller is responsible for validating required fields and providing
+    default values. This function only performs file I/O and JSON parsing.
+#>
+function Load-LauncherSettings {
+    param(
+        [Parameter(Mandatory = $true)]
+        [String]$ConfigPath
+    )
+
+    # If ConfigPath relative, resolve rel script dir
+    if ([System.IO.Path]::IsPathRooted($ConfigPath)) {
+        $resolvedPath = $ConfigPath
+    } else {
+        $resolvedPath = Join-Path -Path $PSScriptRoot -ChildPath $ConfigPath
+    }
+
+    # Ensure launcher settings JSON exists
+    if (-not (Test-Path -Path $resolvedPath)) {
+        [System.Windows.Forms.MessageBox]::Show(
+            "Configuration file not found: $resolvedPath`n`nPlease ensure launcher_settings.json exists in the script directory.",
+            "Configuration Error",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        )
+        return $false
+    }
+
+    try {
+        $jsonContent = Get-Content -Path $resolvedPath -Raw -Encoding UTF8
+        $config = $jsonContent | ConvertFrom-Json
+        return $config
+    }
+    catch {
+        [System.Windows.Forms.MessageBox]::Show(
+            "Failed to parse launcher configuration file: $resolvedPath`n`nError: $($_.Exception.Message)",
+            "Configuration Error",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        )
+    }
+}
+
+<#
+.SYNOPSIS
+    Scans a directory and loads all valid job configuration files.
+
+.DESCRIPTION
+    Reads the job_configs_directory from launcher settings, scans for .json
+    files, and attempts to load each using Load-Configuration. Valid configs
+    are stored in a hashtable keyed by config name (from the config's internal
+    "name" field or filename). Invalid configs are skipped with warnings.
+
+.PARAMETER ConfigDir (string)
+    The directory to look for JSON files in.
+
+.OUTPUTS
+    [hashtable] - Keys are config names, values are hashtables containing:
+        - Name (string)
+        - FilePath (string)
+        - Settings (PSCustomObject from config.settings)
+        - NavigationItems (array of category/group items)
+        - HasCategories (bool)
+
+.EXAMPLE
+    $configs = Discover-JobConfigs -ConfigDir ".\\json"
+
+.NOTES
+    This function does NOT modify globals. It returns a hashtable that the
+    caller can store in $script:AvailableConfigs.
+#>
+function Discover-JobConfigs {
+    param(
+        [Parameter(Mandatory = $true)]
+        [String]$ConfigDir
+    )
+
+    $availableConfigs = @{}
+
+    if (-not (Test-Path $ConfigDir)) {
+        throw "Job configs directory not found: $ConfigDir"
+    }
+
+    $jsonFiles = Get-ChildItem -Path $ConfigDir -Filter "*.json" -File
+
+    if ($jsonFiles.Count -eq 0) {
+        throw "WARNING: No JSON files found in $ConfigDir"
+    }
+
+    # For each JSON file discovered:
+    # - Call Load-Configuration for each JSON file discovered
+    # - This will return config data to add to AvailableConfigs
+    # - This will reset globals, so save and reset them
+    #   to avoid polluting UI
+    foreach ($file in $jsonFiles) {
+        try {
+
+            # Temporarily override script globals to avoid polluting UI
+            $tempSettings = $script:Settings
+            $tempNavigation = $script:NavigationItems
+            $tempHasCategories = $script:HasCategories
+
+            $success = Load-Configuration -ConfigPath $file.FullName -Silent $true
+
+            if ($success) {
+                # Determine config name
+                $configName = $null
+                if ($script:Settings.PSObject.Properties['name'] -and $script:Settings.name) {
+                    $configName = $script:Settings.name
+                } else {
+                    $configName = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
+                }
+
+                # Store a deep copy of relevant globals
+                $availableConfigs[$configName] = @{
+                    Name = $configName
+                    FilePath = $file.FullName
+                    Settings = $script:Settings
+                    NavigationItems = $script:NavigationItems
+                    HasCategories = $script:HasCategories
+                }
+                Write-Host "DEBUG: Loaded config '$configName' from $($file.Name)"
+            }
+
+            # Restore globals
+            $script:Settings = $tempSettings
+            $script:NavigationItems = $tempNavigation
+            $script:HasCategories = $tempHasCategories
+        }
+        catch {
+            Write-Host "WARNING: Failed to load $($file.Name): $($_.Exception.Message)"
+        }
+    }
+
+    return $availableConfigs
+}
+
+<#
+.SYNOPSIS
+    Determines which job configuration to load on startup.
+
+.DESCRIPTION
+    Checks launcher settings for a 'default_config' field. If present and
+    valid (exists in $script:AvailableConfigs), returns that config name.
+    Otherwise, falls back to the first config alphabetically.
+
+    Throws an error if $script:AvailableConfigs is empty or not defined.
+
+.OUTPUTS
+    [string] - The name of the default config to load.
+
+.EXAMPLE
+    $defaultConfig = Get-DefaultConfig
+
+.NOTES
+    This function relies on $script:AvailableConfigs and
+    $script:LauncherSettings being already populated.
+#>
+function Get-DefaultConfig {
+    # Validate AvailableConfigs exists and has entries
+    if (-not $script:AvailableConfigs -or $script:AvailableConfigs.Keys.Count -eq 0) {
+        throw "Get-DefaultConfig: No available configs found. Cannot determine default config."
+    }
+
+    # Validate LauncherSettings exists
+    if (-not $script:LauncherSettings) {
+        throw "Get-DefaultConfig: LauncherSettings is not loaded. Cannot determine default config."
+    }
+
+    # Check launcher settings for default_config
+    $defaultConfig = $null
+    if ($script:LauncherSettings.PSObject.Properties['default_config'] -and $script:LauncherSettings.default_config) {
+        $defaultConfig = $script:LauncherSettings.default_config
+    }
+
+    # Validate default_config exists, or fall back to first config alphabetically
+    if (-not $defaultConfig -or -not $script:AvailableConfigs.ContainsKey($defaultConfig)) {
+        if ($defaultConfig) {
+            Write-Host "WARNING: 'default_config' from launcher settings ('$defaultConfig') not found in available configs. Using first config alphabetically."
+        } else {
+            Write-Host "DEBUG: No 'default_config' field specified in launcher settings. Using first config alphabetically."
+        }
+        return ($script:AvailableConfigs.Keys | Sort-Object)[0]
+    }
+
+    return $defaultConfig
+}
 
 <#
 .SYNOPSIS
@@ -1430,12 +1649,17 @@ function Get-JobTimeout {
         return $JobItem.ParentCategory.timeout_seconds
     }
 
-    # 5. default_timeout_seconds in "settings" of job configuration JSON
+    # 5. default_timeout_seconds in "settings" of currently selected job configuration JSON
     if ($script:Settings.PSObject.Properties['default_timeout_seconds'] -and $script:Settings.default_timeout_seconds) {
         return $script:Settings.default_timeout_seconds
     }
 
-    # 6. default_timeout_seconds of script
+    # 6. default_timeout_seconds in general launcher configuration JSON
+    if ($script:LauncherSettings.PSObject.Properties['default_timeout_seconds'] -and $script:LauncherSettings.default_timeout_seconds) {
+        return $script:LauncherSettings.default_timeout_seconds
+    }
+
+    # 7. default_timeout_seconds of script
     return $DefaultTimeoutSeconds
 }
 
@@ -1505,12 +1729,17 @@ function Get-JobWorkingDirectory {
         return $JobItem.ParentCategory.working_directory
     }
 
-    # 4. Global settings
+    # 4. default_working_directory in "settings" of currently selected job configuration JSON
     if ($script:Settings.PSObject.Properties['default_working_directory'] -and $script:Settings.default_working_directory) {
         return $script:Settings.default_working_directory
     }
 
-    # 5. Fallback to the script's directory
+    # 5. default_working_directory in general launcher configuration JSON
+    if ($script:LauncherSettings.PSObject.Properties['default_working_directory'] -and $script:LauncherSettings.default_working_directory) {
+        return $script:LauncherSettings.default_working_directory
+    }
+
+    # 6. Fallback to the script's directory
     return $PSScriptRoot
 }
 
@@ -2276,8 +2505,12 @@ function Get-ItemTheme {
         return $Item.Parent.theme
     }
     if ($script:Settings.PSObject.Properties['theme'] -and $script:Settings.theme) {
-        # JSON global theme in "settings"
+        # JSON global theme in "settings" of currently selected job configuration JSON file
         return $script:Settings.theme
+    }
+    if ($script:LauncherSettings.PSObject.Properties['theme'] -and $script:LauncherSettings.theme) {
+        # JSON global theme in launcher settings (main JSON file for this script)
+        return $script:LauncherSettings.theme
     }
     return $script:FallbackThemeName
 }
@@ -3132,6 +3365,12 @@ function Update-ButtonStates {
         }
     }
 
+    # Disable config dropdown if job running
+    if ($script:ConfigDropdown) {
+        $script:ConfigDropdown.Enabled = (-not $Running)
+        # Also gray out visually (ComboBox doesn't have good disabled styling, but enabled=false works)
+    }
+
     if ($script:KillButton) {
         # KillButtn should be opposite of job buttons: enable when jobs running, gray out otherwise
         Update-KillButton -KillButton $script:KillButton -Enable $Running
@@ -3274,6 +3513,53 @@ function Set-Item {
     Apply-Theme -themeName $itemTheme
 }
 
+function Set-JobConfig {
+    param([string]$ConfigName)
+    if (-not $script:AvailableConfigs.ContainsKey($ConfigName)) {
+        throw "Apply-JobConfig: Config '$ConfigName' not found in AvailableConfigs"
+    }
+
+    $config = $script:AvailableConfigs[$ConfigName]
+
+    # Set globals
+    $script:Settings = $config.Settings
+    $script:NavigationItems = $config.NavigationItems
+    $script:HasCategories = $config.HasCategories
+
+    # Reset UI-dependent globals
+    $script:CurrentItem = $null
+    $script:CurrentDisplayedGroup = $null
+    $script:CurrentConfigName = $ConfigName
+}
+
+<#
+.SYNOPSIS
+    Applies a previously loaded config to the UI.
+
+.DESCRIPTION
+    Takes a config object from $script:AvailableConfigs and sets all
+    globals to its values, then refreshes the left panel and theme.
+
+.PARAMETER ConfigName
+    The key name of the config in $script:AvailableConfigs.
+#>
+function Apply-JobConfig {
+    param([string]$ConfigName)
+
+    if (-not $script:AvailableConfigs.ContainsKey($ConfigName)) {
+        throw "Apply-JobConfig: Config '$ConfigName' not found in AvailableConfigs"
+    }
+
+    # Set as current config
+    Set-JobConfig -ConfigName $ConfigName
+
+    # set config dropdown
+    Set-Dropdown -Dropdown $script:ConfigDropdown -NewValue $ConfigName
+
+    # Refresh UI
+    Populate-LeftPanel
+}
+
 # =============================================================================
 # UI MANAGEMENT: MAIN UI RENDERING
 # =============================================================================
@@ -3357,6 +3643,39 @@ function Create-ThemeDropdown {
     })
 
     return $themeCombo
+}
+
+<#
+.SYNOPSIS
+    Create config selection dropdown to the toolbar.
+#>
+function Create-ConfigDropdown {
+
+    $configCombo = New-Object System.Windows.Forms.ComboBox
+    $configCombo.DropDownStyle = "DropDownList"
+    $configCombo.Width = 150
+    $configCombo.IntegralHeight = $false
+
+    foreach ($configName in ($script:AvailableConfigs.Keys | Sort-Object)) {
+        $null = $configCombo.Items.Add($configName)
+    }
+
+    if ($script:CurrentConfigName -and $configCombo.Items.Contains($script:CurrentConfigName)) {
+        $configCombo.SelectedItem = $script:CurrentConfigName
+    }
+
+    $configCombo.Add_SelectedIndexChanged({
+        if ($script:SuppressConfigEvent -or $script:CurrentRunningJob) { return }
+        $selected = $this.SelectedItem.ToString()
+        if ($selected -ne $script:CurrentConfigName) {
+            Apply-JobConfig -ConfigName $selected
+            $script:SuppressConfigEvent = $true
+            $this.SelectedItem = $script:CurrentConfigName
+            $script:SuppressConfigEvent = $false
+        }
+    })
+
+    return $configCombo
 }
 
 <#
@@ -3546,11 +3865,12 @@ function Initialize-Toolbar {
     #$toolbar.AutoSize = $true
     $toolbar.AutoSize = $false
     #$toolbar.AutoSizeMode = "GrowAndShrink"
-    $toolbar.ColumnCount = 3
+    $toolbar.ColumnCount = 4
     $toolbar.ColumnStyles.Clear()
-    $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))
-    $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100)))
-    $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))
+    $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))  # Col 0: Theme
+    $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))  # Col 1: Config
+    $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100))) # Col 2: Spacer
+    $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))  # Col 3: Kill button
 
     # === Column 0: Theme selector ===
     $themePanel = New-Object System.Windows.Forms.FlowLayoutPanel
@@ -3563,6 +3883,7 @@ function Initialize-Toolbar {
     $themeLabel.AutoSize = $true
 
     # === Create theme dropdown ==
+
     $themeCombo = Create-ThemeDropdown
     $script:ThemeCombo = $themeCombo
 
@@ -3570,13 +3891,33 @@ function Initialize-Toolbar {
     $null = $themePanel.Controls.Add($themeCombo)
     $null = $toolbar.Controls.Add($themePanel, 0, 0)
 
-    # === Column 1: Spacer ===
+    # === Column 1: Config selector ===
+    $configPanel = New-Object System.Windows.Forms.FlowLayoutPanel
+    $configPanel.AutoSize = $true
+    $configPanel.FlowDirection = "LeftToRight"
+    $configPanel.Margin = New-Object System.Windows.Forms.Padding(5, 0, 5, 0)
+
+    $configLabel = New-Object System.Windows.Forms.Label
+    $configLabel.Text = "Config:"
+    $configLabel.AutoSize = $true
+    $configLabel.TextAlign = "MiddleLeft"
+
+    # === Create Config dropdown ===
+
+    $configCombo = Create-ConfigDropdown
+    $script:ConfigDropdown = $configCombo
+
+    $null = $configPanel.Controls.Add($configLabel)
+    $null = $configPanel.Controls.Add($configCombo)
+    $null = $toolbar.Controls.Add($configPanel, 1, 0)
+
+    # === Column 2: Spacer ===
     $spacer = New-Object System.Windows.Forms.Panel
     $spacer.Dock = "Fill"
     #$spacer.Margin = New-Object System.Windows.Forms.Padding(0)
-    $null = $toolbar.Controls.Add($spacer, 1, 0)
+    $null = $toolbar.Controls.Add($spacer, 2, 0)
 
-    # === Column 2: Kill button ===
+    # === Column 3: Kill button ===
     $killButton = New-Object System.Windows.Forms.Button
     $killButton.Text = "Kill Current Job"
     $killButton.AutoSize = $true
@@ -3598,7 +3939,7 @@ function Initialize-Toolbar {
     # set initial styling
     Update-KillButton -KillButton $killButton -Enable $false
 
-    $null = $toolbar.Controls.Add($killButton, 2, 0)
+    $null = $toolbar.Controls.Add($killButton, 3, 0)
     $script:KillButton = $killButton
 
     return $toolbar
@@ -4151,20 +4492,40 @@ function Convert-HexColorToDrawingColor {
 # =============================================================================
 
 function Main {
-    # Determine config path
-    $scriptDirectory = Split-Path -Path $script:MyInvocation.MyCommand.Path -Parent
-    $configPath = Join-Path -Path $scriptDirectory -ChildPath $DefaultConfigPath
 
-    Write-Host "DEBUG: Config path = $configPath"
+    # === Read and set launcher settings JSON ==
 
-    # Load configuration
-    $loadResult = Load-Configuration -ConfigPath $configPath
-    Write-Host "DEBUG: Load-Configuration returned: $loadResult (type: $($loadResult.GetType().FullName))"
+    $script:LauncherSettings = Load-LauncherSettings -ConfigPath $DefaultSettingsPath
 
-    if (-not $loadResult) {
-        Write-Host "DEBUG: Configuration load failed, exiting"
+    # === Determine dir for discovering config files ==
+
+    $configDir = $DefaultJobConfigsDirectory
+    if ($script:LauncherSettings.PSObject.Properties['job_configs_directory'] -and $script:LauncherSettings.job_configs_directory) {
+        $configDir = $script:LauncherSettings.job_configs_directory
+    }
+    # resolve path (relative to script location)
+    if (-not [System.IO.Path]::IsPathRooted($ConfigDir)) {
+        $configDir = Join-Path -Path $PSScriptRoot -ChildPath $configDir
+    }
+
+    # === Discover and set all job configs ==
+
+    $script:AvailableConfigs = Discover-JobConfigs -ConfigDir $configDir
+
+    if ($script:AvailableConfigs.Count -eq 0) {
+        [System.Windows.Forms.MessageBox]::Show(
+            "No valid job configurations found.`n`nPlease check your job_configs_directory in launcher_settings.json",
+            "Configuration Error",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        )
         exit 1
     }
+
+    # === Determine default config ==
+
+    $defaultConfig = Get-DefaultConfig
+    Write-Host "DEBUG: Default job config: '$defaultConfig'"
 
     # Load themes from themes.json (or use built-in default)
     Load-Themes
@@ -4187,8 +4548,8 @@ function Main {
 
     Write-Host "DEBUG: GUI built successfully, about to populate"
 
-    # Populate with jobs - pass the entire hashtable
-    Populate-LeftPanel
+    # Apply the default config (this also populates the left panel)
+    Apply-JobConfig -ConfigName $defaultConfig
 
     Write-Host "DEBUG: GUI built, setting up close handler"
 
