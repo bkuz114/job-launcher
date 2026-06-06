@@ -2617,6 +2617,39 @@ function Update-ButtonsForGroup {
 
 <#
 .SYNOPSIS
+    Removes and disposes the current left panel control (TreeView or ListBox).
+
+.DESCRIPTION
+    Checks whether a TreeView or ListBox currently exists in the left panel
+    (via $script:FormControls.TreeView and $script:FormControls.ListBox).
+    If found, removes it from the panel, disposes it to free resources,
+    and clears the corresponding global variable.
+
+    This function is called before populating a new view to ensure only one
+    control exists at a time and to prevent memory leaks.
+
+.NOTES
+    Both TreeView and ListBox globals are checked because the left panel
+    can contain either, but never both simultaneously. The function safely
+    handles the case where neither exists.
+#>
+function Clear-LeftPanel {
+    # Remove existing TreeView if present
+    if ($script:FormControls.ContainsKey('TreeView') -and $script:FormControls.TreeView) {
+        $script:FormControls.LeftPanel.Controls.Remove($script:FormControls.TreeView)
+        $script:FormControls.TreeView.Dispose()
+        $script:FormControls.TreeView = $null
+    }
+    # Remove existing ListBox if present
+    if ($script:FormControls.ContainsKey('ListBox') -and $script:FormControls.ListBox) {
+        $script:FormControls.LeftPanel.Controls.Remove($script:FormControls.ListBox)
+        $script:FormControls.ListBox.Dispose()
+        $script:FormControls.ListBox = $null
+    }
+}
+
+<#
+.SYNOPSIS
     Calculates the maximum pixel width required to display all TreeView node labels.
 
 .DESCRIPTION
@@ -2767,13 +2800,6 @@ function Populate-TreeView {
         throw "Populate-TreeView: No categories in JSON -- can't populate tree view"
     }
 
-    # Remove existing ListBox if present
-    if ($script:FormControls.ContainsKey('ListBox') -and $script:FormControls.ListBox) {
-        $script:FormControls.LeftPanel.Controls.Remove($script:FormControls.ListBox)
-        $script:FormControls.ListBox.Dispose()
-        $script:FormControls.ListBox = $null
-    }
-
     # Create TreeView (to hold groups) using dedicated function
     $treeView = Initialize-CategoryTreeView
     $null = $script:FormControls.LeftPanel.Controls.Add($treeView)
@@ -2849,13 +2875,6 @@ function Populate-ListWithDividers {
     # throw error if now hierarchical
     if (-not $script:HasCategories) {
         throw "Populate-ListWithDividers: No categories in JSON -- can't populate list with dividers"
-    }
-
-    # Remove existing TreeView if present
-    if ($script:FormControls.ContainsKey('TreeView') -and $script:FormControls.TreeView) {
-        $script:FormControls.LeftPanel.Controls.Remove($script:FormControls.TreeView)
-        $script:FormControls.TreeView.Dispose()
-        $script:FormControls.TreeView = $null
     }
 
     # Create ListBox using dedicated function
@@ -3830,6 +3849,10 @@ function Populate-LeftPanel {
     if (-not $script:HasCategories) {
         $view = "flat"
     }
+
+    # == Clear existing left panel controls == #
+
+    Clear-LeftPanel
 
     # == Build left panel based on view detected == #
 
