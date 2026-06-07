@@ -340,6 +340,83 @@ function Discover-JobConfigs {
 
 <#
 .SYNOPSIS
+    Finds a config key in AvailableConfigs by matching against name or file path.
+
+.DESCRIPTION
+    Searches $script:AvailableConfigs for a config that matches the given identifier.
+    Match priority:
+        1. Exact key match (fast path)
+        2. File path match (full path, relative path, or filename)
+        3. Filename without extension match
+
+    Returns the config key (string) if found, otherwise $null.
+
+.PARAMETER AvailableConfigs
+    Hashtable of available configs (keys are config names, values are hashtables
+    with at least 'Name' and 'FilePath' properties).
+
+.PARAMETER Config
+    The config identifier to search for. Can be a config name, filename, file path,
+    or filename without extension.
+
+.EXAMPLE
+    $key = Find-Config -AvailableConfigs $script:AvailableConfigs -Config "a.json"
+    # Returns "myjson" if a.json contains a name field, otherwise returns "a"
+
+.EXAMPLE
+    $key = Find-Config -AvailableConfigs $script:AvailableConfigs -Config "myjson"
+    # Returns "myjson" (exact key match)
+
+.EXAMPLE
+    $key = Find-Config -AvailableConfigs $script:AvailableConfigs -Config "nonexistent"
+    # Returns $null
+#>
+function Find-Config {
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$AvailableConfigs,
+        [Parameter(Mandatory = $true)]
+        [string]$Config
+    )
+
+    # Fast path: exact key match
+    if ($AvailableConfigs.ContainsKey($Config)) {
+        return $Config
+    }
+
+    # Search through all configs
+    foreach ($key in $AvailableConfigs.Keys) {
+        $configInfo = $AvailableConfigs[$key]
+
+        # each config should have a FilePath attribute
+        if (-not $configInfo.ContainsKey('FilePath')) {
+            throw "Find-Config: AvailableConfigs entry '$key' missing required 'FilePath' field; can not proceed with finding a config. (Hint: was the way configs are loaded into `$script:AvailableConfigs` within Discover-JobConfigs changed?)"
+        }
+        $filePath = $configInfo.FilePath
+        $fileName = Split-Path $filePath -Leaf
+        $fileNameWithoutExt = [System.IO.Path]::GetFileNameWithoutExtension($fileName)
+
+        # Match against full file path
+        if ($filePath -eq $Config) {
+            return $key
+        }
+
+        # Match against filename (e.g., "a.json")
+        if ($fileName -eq $Config) {
+            return $key
+        }
+
+        # Match against filename without extension (e.g., "a")
+        if ($fileNameWithoutExt -eq $Config) {
+            return $key
+        }
+    }
+
+    return $null
+}
+
+<#
+.SYNOPSIS
     Determines which job configuration to load on startup.
 
 .DESCRIPTION
@@ -374,23 +451,31 @@ function Get-DefaultConfig {
     $defaultConfig = $null
     if ($script:LauncherSettings.PSObject.Properties['default_config'] -and $script:LauncherSettings.default_config) {
         $defaultConfig = $script:LauncherSettings.default_config
-    }
 
-    # Validate default_config exists, or fall back to first config alphabetically
-    if (-not $defaultConfig -or -not $script:AvailableConfigs.ContainsKey($defaultConfig)) {
-        if ($defaultConfig) {
-            Write-Host "WARNING: 'default_config' from launcher settings ('$defaultConfig') not found in available configs. Using first config alphabetically."
+        # Validate default_config exists, or fall back to first config alphabetically
+
+        # IMPORTANT: Keys in AvailableConfigs are config NAMES (e.g., a 'name' field from JSON
+        # or the filename without extension), NOT file paths. A user specifying 'default_config'
+        # will intuitively supply a filename or path, not a config name. Therefore, a simple
+        # ContainsKey() check is insufficient. Use Find-Config instead.
+
+        $matchingKey = Find-Config -AvailableConfigs $script:AvailableConfigs -Config $defaultConfig
+        if ($matchingKey) {
+            return $matchingKey
         } else {
-            Write-Host "DEBUG: No 'default_config' field specified in launcher settings. Using first config alphabetically."
+            Write-Host "WARNING: 'default_config' from launcher settings ('$defaultConfig') not found in available configs. Using first config alphabetically."
         }
-        # Force array before indexing:
-        # - $script:AvailableConfigs has only one key, .Keys returns that single key (not an array)
-        #   and [0] would return the first character.
-        # - The @() wrapper ensures a one-element array.
-        return @($script:AvailableConfigs.Keys | Sort-Object)[0]
+    } else {
+        Write-Host "DEBUG: No 'default_config' field specified in launcher settings. Using first config alphabetically."
     }
 
-    return $defaultConfig
+    # return first config found, alphabetically.
+
+    # Force array before indexing:
+    # - $script:AvailableConfigs has only one key, .Keys returns that single key (not an array)
+    #   and [0] would return the first character.
+    # - The @() wrapper ensures a one-element array.
+    return @($script:AvailableConfigs.Keys | Sort-Object)[0]
 }
 
 <#
