@@ -138,7 +138,7 @@ $script:OutputTextBox = $null               # Reference to UI control
 $script:StatusLabel = $null                 # Reference to UI control
 $script:JobButtons = @{}                    # Dictionary mapping job name to button control
 $script:KillButton = $null                  # Reference to Kill button
-$script:ThemeCombo = $null                  # Theme dropdown
+$script:ThemeMenuItem = $null               # Theme dropdown
 $script:MainForm = $null                    # Reference to main window
 $script:NavigationItems = $null             # Collection of all categories/groups from parsed JSON config.
                                             # Each item has .Type ("category" or "group"), .Label (display name),
@@ -155,7 +155,7 @@ $script:CurrentDisplayedGroup = $null       # currently display group (group who
 
 $script:AvailableConfigs = @{}        # Hashtable of parsed configs (key = config name)
 $script:CurrentConfigName = $null     # Currently active config name
-$script:ConfigDropdown = $null        # Reference to config dropdown control
+$script:ConfigMenuItem = $null        # Reference to config dropdown control
 $script:SuppressConfigEvent = $false   # Prevents recursive config dropdown event
 
 # =============================================================================
@@ -3451,8 +3451,8 @@ function Update-ButtonStates {
     }
 
     # Disable config dropdown if job running
-    if ($script:ConfigDropdown) {
-        $script:ConfigDropdown.Enabled = (-not $Running)
+    if ($script:ConfigMenuItem) {
+        $script:ConfigMenuItem.Enabled = (-not $Running)
     }
 
     if ($script:KillButton) {
@@ -3589,7 +3589,7 @@ function Set-Item {
     Set-Theme -ThemeName $itemTheme
 
     # update theme dropdown in MenuBar
-    Update-DropdownSelection -Dropdown $script:ThemeCombo -SelectedItem $itemTheme
+    Update-DropdownSelection -Dropdown $script:ThemeMenuItem -SelectedItem $itemTheme
 
     if ($Item.Type -eq "group") {
         # Create buttons for this group
@@ -3641,7 +3641,7 @@ function Apply-JobConfig {
     Set-JobConfig -ConfigName $ConfigName
 
     # update config dropdown in MenuBar
-    Update-DropdownSelection -Dropdown $script:ConfigDropdown -SelectedItem $ConfigName
+    Update-DropdownSelection -Dropdown $script:ConfigMenuItem -SelectedItem $ConfigName
 
     # Refresh UI
     Populate-LeftPanel
@@ -4011,12 +4011,12 @@ function Create-MenuStrip {
     # === Config Menu ===
 
     $configMenu = Create-ConfigMenuItem
-    $script:ConfigDropdown = $configMenu
+    $script:ConfigMenuItem = $configMenu
 
     # === Theme Menu ===
 
     $themeMenu = Create-ThemeMenuItem
-    $script:ThemeCombo = $themeMenu
+    $script:ThemeMenuItem = $themeMenu
 
     # === Construct MenuStrip ===
 
