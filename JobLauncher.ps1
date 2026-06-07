@@ -279,7 +279,9 @@ function Discover-JobConfigs {
         throw "Job configs directory not found: $ConfigDir"
     }
 
-    $jsonFiles = Get-ChildItem -Path $ConfigDir -Filter "*.json" -File
+    # PowerShell will return a scalar (not one-element array) if only one file found,
+    # so you must force this into an array via @( ) to ensure an array
+    $jsonFiles = @(Get-ChildItem -Path $ConfigDir -Filter "*.json" -File)
 
     if ($jsonFiles.Count -eq 0) {
         throw "WARNING: No JSON files found in $ConfigDir"
@@ -378,7 +380,11 @@ function Get-DefaultConfig {
         } else {
             Write-Host "DEBUG: No 'default_config' field specified in launcher settings. Using first config alphabetically."
         }
-        return ($script:AvailableConfigs.Keys | Sort-Object)[0]
+        # Force array before indexing:
+        # - $script:AvailableConfigs has only one key, .Keys returns that single key (not an array)
+        #   and [0] would return the first character.
+        # - The @() wrapper ensures a one-element array.
+        return @($script:AvailableConfigs.Keys | Sort-Object)[0]
     }
 
     return $defaultConfig
