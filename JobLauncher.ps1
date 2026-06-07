@@ -2686,6 +2686,29 @@ function Create-ToggleButton {
 
 <#
 .SYNOPSIS
+    Set view toggle button tag back to $null to clear user selection.
+.DESCRIPTION
+    - The left panel has a view toggle button when hierarchical configs are displayed.
+    - If user clicks the button, the result saved in button .Tag as boolean
+      ($true for TreeView, $false for ListBox)
+    - This allows user selected views to persist if the left panel gets re-built
+      (which it does any time the view changes e.g. if user switches the view)
+    - Issue: need to clear this when a new config is loaded (as want that config's
+      "view" setting to take priority over any view that was set for the previous config)
+
+.PARAMETER Button
+    The toggle button control to update.
+#>
+function Clear-ToggleButton {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Windows.Forms.Button]$Button
+    )
+    $Button.Tag = $null
+}
+
+<#
+.SYNOPSIS
     Updates the toggle button's visual state and Tag property.
 
 .DESCRIPTION
@@ -3612,6 +3635,12 @@ function Set-JobConfig {
     $script:NavigationItems = $config.NavigationItems
     $script:HasCategories = $config.HasCategories
 
+    # Clear any user selection of left panel views
+    # (this should be done before left panel is re-built for the new config!)
+    if ($script:FormControls -and $script:FormControls.ContainsKey("ToggleButton") -and $script:FormControls.ToggleButton) {
+        Clear-ToggleButton -Button $script:FormControls.ToggleButton
+    }
+
     # Reset UI-dependent globals
     $script:CurrentItem = $null
     $script:CurrentDisplayedGroup = $null
@@ -3637,6 +3666,10 @@ function Apply-JobConfig {
     }
 
     # Set as current config
+    # MUST CALL BEFORE REFRESHING UI
+    # (among other reasons, the left panel view toggle button
+    # must be cleared, else user's view selection from the
+    # previous config will override the new config's view setting)
     Set-JobConfig -ConfigName $ConfigName
 
     # update config dropdown in MenuBar
@@ -4255,6 +4288,9 @@ function Populate-LeftPanel {
 
     # User selection view toggle button always takes priority
     # (ensure state is set: is null initially before user click)
+    # Note: should be cleared when a new config is loaded, else
+    # the user's selection during previous config will over-write
+    # the new config's "view" setting)
     if ($buttonExists -and $script:FormControls.ToggleButton -and $script:FormControls.ToggleButton.Tag -ne $null) {
         $view = if ($script:FormControls.ToggleButton.Tag -eq $true) { "tree" } else { "list" }
     } elseif ($script:Settings.PSObject.Properties['view'] -and $script:Settings.view) {
