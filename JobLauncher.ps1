@@ -117,6 +117,7 @@ $DefaultJobConfigsDirectory = ".\\job_configs"   # default dir for job JSON file
 $DefaultLogsDirectoryName = "Logs"  # Name of default log folder (relative to script; used if JSON doesn't specify) 
 $DefaultLogsDirectory = Join-Path -Path (Split-Path -Path $script:MyInvocation.MyCommand.Path -Parent) -ChildPath $DefaultLogsDirectoryName
 $DefaultTimeoutSeconds = 30
+$AppIcon = Join-Path $PSScriptRoot "assets\favicon.ico" # App icon
 
 # =============================================================================
 # END USER CONFIGURABLE SETTINGS
@@ -4053,6 +4054,13 @@ function Build-GUI {
     $form.Height = $UI_Window_Height
     $form.StartPosition = "CenterScreen"
     $form.MinimumSize = New-Object System.Drawing.Size(600, 400)
+
+    # --- Set icon ---
+    if (Test-Path $AppIcon) {
+        $form.Icon = New-Object System.Drawing.Icon($AppIcon)
+    } else {
+        Write-Host "WARNING: App icon not found at $AppIcon"
+    }
 
     # =========================================================================
     # ROOT TABLE LAYOUT (2 rows: toolbar, content)
