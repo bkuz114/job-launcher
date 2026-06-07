@@ -2355,13 +2355,6 @@ function Apply-Theme {
     # Set the theme globally first
     Set-Theme -themeName $ThemeName
 
-    # Update dropdown
-    # Note: You must use Set-Dropdown function to set the dropdown state
-    # else it will trigger a new Selection event which will reset
-    # $script:UserSelectedTheme boolean and prevent any Group / Category
-    # theme changes
-    Set-Dropdown -Dropdown $script:ThemeCombo -NewValue $ThemeName
-
     # Button colors
     $buttonColor = Get-ThemeColor -PropertyName "button"
     $buttonTextColor = Get-ThemeColor -PropertyName "button_text"
@@ -3568,87 +3561,6 @@ function Apply-JobConfig {
 
 <#
 .SYNOPSIS
-    Creates and configures the theme selection dropdown control.
-
-.DESCRIPTION
-    Builds a ComboBox populated with all available theme names from
-    $Script:Themes, plus a separator and a "Reset" option. Configures
-    the dropdown style and event handler for theme switching.
-
-    The event handler manages:
-    - Programmatic suppression via $script:SuppressThemeDropdownEvent
-    - Ignoring the separator line
-    - Reset functionality (clears user theme override)
-    - Normal theme selection (sets user override and applies theme)
-
-.OUTPUTS
-    [System.Windows.Forms.ComboBox] - Configured theme dropdown control.
-
-.NOTES
-    The caller is responsible for:
-    - Adding the returned ComboBox to a parent container
-    - Storing the reference in $script:ThemeCombo
-    - Adding it to the appropriate UI panel
-#>
-function Create-ThemeDropdown {
-
-    $themeCombo = New-Object System.Windows.Forms.ComboBox
-    $themeCombo.DropDownStyle = "DropDownList"
-    $themeCombo.Width = 100
-    $themeCombo.DropDownHeight = 400
-    $themeCombo.IntegralHeight = $false
-
-    foreach ($themeName in $Script:Themes.Keys | Sort-Object) {
-        $null = $themeCombo.Items.Add($themeName)
-    }
-    # add a separator that does nothing, then reset
-    # option that will reset back to allowing JSON theme
-    # selection (e.g. that if a user clicks a new Group or
-    # Category with a theme set, it will switch to that --
-    # when a user has selected from the dropdown that functionality
-    # is temporarily prevented; reset will put it back)
-    $null = $themeCombo.Items.Add("---------------")
-    $null = $themeCombo.Items.Add("Reset")
-
-    $themeCombo.Add_SelectedIndexChanged({
-        # global boolean to commnicate that this change
-        # event was triggered programmatically to ONLY
-        # change the displayed option (not via
-        # user selection)
-        if ($script:SuppressThemeDropdownEvent) {
-            return
-        }
-
-        $selected = $this.SelectedItem.ToString()
-        if ($selected.Contains("---")) {
-            # Ignore selection, revert to previous value
-            Set-Dropdown -Dropdown $this -NewValue $script:CurrentThemeName
-            return
-        } elseif ($selected -eq "Reset") {
-            # Reset selected:
-            # get theme for currently selected item and reset to that
-
-            # Reset global boolean UserSelectedTheme
-            # (Get-ItemTheme checks this boolean and if set it
-            # won't update Group / Category themes when selected)
-            $script:UserSelectedTheme = $null
-            # apply theme of currently selected Item
-            $themeToApply = Get-ItemTheme -Item $script:CurrentItem
-            Apply-Theme -themeName $themeToApply
-            return
-        } else {
-            # Regular user selection: apply theme and indicate user selection
-            Apply-Theme -themeName $selected
-            # set user selected theme so group switching won't override it
-            $script:UserSelectedTheme = $this.SelectedItem.ToString()
-        }
-    })
-
-    return $themeCombo
-}
-
-<#
-.SYNOPSIS
     Creates and configures the ListBox with owner-draw support for dividers.
 .DESCRIPTION
     Sets DrawMode to OwnerDrawFixed and attaches the DrawItem event handler.
@@ -3828,48 +3740,19 @@ function Initialize-LeftPanel {
 function Initialize-Toolbar {
     $toolbar = New-Object System.Windows.Forms.TableLayoutPanel
     $toolbar.RowCount = 1
-    $toolbar.RowStyles.Clear()
-    $null = $toolbar.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))
     $toolbar.Dock = "Top"
-    #$toolbar.AutoSize = $true
-    $toolbar.AutoSize = $false
-    #$toolbar.AutoSizeMode = "GrowAndShrink"
-    $toolbar.ColumnCount = 3
+    $toolbar.AutoSize = $true
+    $toolbar.AutoSizeMode = "GrowAndShrink"
+    $toolbar.ColumnCount = 1
     $toolbar.ColumnStyles.Clear()
-    $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))  # Col 0: Theme
-    $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100))) # Col 2: Spacer
-    $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))  # Col 3: Kill button
+    $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100)))
 
-    # === Column 0: Theme selector ===
-    $themePanel = New-Object System.Windows.Forms.FlowLayoutPanel
-    $themePanel.AutoSize = $true
-    $themePanel.FlowDirection = "LeftToRight"
-    $themePanel.Margin = New-Object System.Windows.Forms.Padding(5, 0, 5, 0)
-
-    $themeLabel = New-Object System.Windows.Forms.Label
-    $themeLabel.Text = "Theme:"
-    $themeLabel.AutoSize = $true
-
-    # === Create theme dropdown ==
-
-    $themeCombo = Create-ThemeDropdown
-    $script:ThemeCombo = $themeCombo
-
-    $null = $themePanel.Controls.Add($themeLabel)
-    $null = $themePanel.Controls.Add($themeCombo)
-    $null = $toolbar.Controls.Add($themePanel, 0, 0)
-
-    # === Column 2: Spacer ===
-    $spacer = New-Object System.Windows.Forms.Panel
-    $spacer.Dock = "Fill"
-    #$spacer.Margin = New-Object System.Windows.Forms.Padding(0)
-    $null = $toolbar.Controls.Add($spacer, 1, 0)
-
-    # === Column 3: Kill button ===
+    # === Kill button (right-aligned) ===
     $killButton = New-Object System.Windows.Forms.Button
     $killButton.Text = "Kill Current Job"
     $killButton.AutoSize = $true
     $killButton.AutoSizeMode = "GrowAndShrink"
+    $killButton.Anchor = "Right"  # Align to the right side of the panel
     $killButton.Padding = New-Object System.Windows.Forms.Padding(10, 5, 10, 5)
     $killButton.FlatStyle = "Flat"
     $killButton.Margin = New-Object System.Windows.Forms.Padding(5, 5, 5, 5)
@@ -3887,12 +3770,71 @@ function Initialize-Toolbar {
     # set initial styling
     Update-KillButton -KillButton $killButton -Enable $false
 
-    $null = $toolbar.Controls.Add($killButton, 2, 0)
+    $null = $toolbar.Controls.Add($killButton)
     $script:KillButton = $killButton
 
     $toolbar.Margin = New-Object System.Windows.Forms.Padding(0)
 
     return $toolbar
+}
+
+<#
+.SYNOPSIS
+    Creates the Theme menu item for the menu bar.
+
+.DESCRIPTION
+    Builds a ToolStripMenuItem named "Theme" populated with all available
+    theme names from $Script:Themes. Each theme name is added as a submenu
+    item with a click handler that calls Apply-Theme and sets
+    $script:UserSelectedTheme.
+
+    A separator and a "Reset" item are also added. Reset clears the user
+    theme override and reapplies the theme from the currently selected item.
+
+.OUTPUTS
+    [System.Windows.Forms.ToolStripMenuItem] - The configured Theme menu item.
+
+.EXAMPLE
+    $themeMenu = Create-ThemeMenuItem
+    $menuStrip.Items.Add($themeMenu)
+
+.NOTES
+    Does not add a checkmark indicator for the currently active config.
+#>
+function Create-ThemeMenuItem {
+    $themeMenu = New-Object System.Windows.Forms.ToolStripMenuItem
+    $themeMenu.Text = "&Theme"  # Alt+C shortcut
+
+    # Regular themes
+    foreach ($themeName in $Script:Themes.Keys | Sort-Object) {
+        $menuItem = New-Object System.Windows.Forms.ToolStripMenuItem
+        $menuItem.Text = $themeName
+        $menuItem.Add_Click({
+            # Regular user selection: apply theme and indicate user selection
+            Apply-Theme -themeName $this.Text
+            # set user selected theme so group switching won't override it
+            $script:UserSelectedTheme = $this.Text
+        })
+        $null = $themeMenu.DropDownItems.Add($menuItem)
+    }
+
+    # Separator
+    $null = $themeMenu.DropDownItems.Add((New-Object System.Windows.Forms.ToolStripSeparator))
+
+    # Reset item
+    $resetItem = New-Object System.Windows.Forms.ToolStripMenuItem
+    $resetItem.Text = "Reset"
+    $resetItem.Add_Click({
+        # Reset global boolean UserSelectedTheme
+        # (Get-ItemTheme checks this boolean and if set it
+        # won't update Group / Category themes when selected)
+        $script:UserSelectedTheme = $null
+        $themeToApply = Get-ItemTheme -Item $script:CurrentItem
+        Apply-Theme -themeName $themeToApply
+    })
+    $null = $themeMenu.DropDownItems.Add($resetItem)
+
+    return $themeMenu
 }
 
 <#
@@ -3946,15 +3888,15 @@ function Create-MenuStrip {
     $configMenu = Create-ConfigMenuItem
     $script:ConfigDropdown = $configMenu
 
+    # === Theme Menu ===
+
+    $themeMenu = Create-ThemeMenuItem
+    $script:ThemeCombo = $themeMenu
+
     # === Construct MenuStrip ===
 
     $null = $menuStrip.Items.Add($configMenu)
-
-    # === Future menus can be added here ===
-    # Example:
-    # $editMenu = New-Object System.Windows.Forms.ToolStripMenuItem
-    # $editMenu.Text = "&Edit"
-    # $menuStrip.Items.Add($editMenu)
+    $null = $menuStrip.Items.Add($themeMenu)
 
     $menuStrip.Padding = New-Object System.Windows.Forms.Padding(0)
     $menuStrip.Margin = New-Object System.Windows.Forms.Padding(0)
@@ -4014,10 +3956,7 @@ function Build-GUI {
     $rootTable.ColumnCount = 1
     $rootTable.RowStyles.Clear()
     $null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))  # Menu bar
-    #$null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))  # Toolbar
-    # following line that's commented out: when i actually add the toolbar, the height is excessive. the solution is to get rid of
-    # audoSize and instead use this fixed height. Since I'm not actually adding the toolbar in, I'm using AutoSize so that it doesn't take space
-    $null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 50)))  # Toolbar
+    $null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))  # Toolbar
     $null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100))) # Content
 
     # =========================================================================
