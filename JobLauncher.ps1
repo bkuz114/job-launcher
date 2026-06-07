@@ -23,6 +23,9 @@ Set-StrictMode -Version Latest
 # Default error action: Stop makes try/catch work predictably
 $ErrorActionPreference = 'Stop'
 
+# Marker to appear in dropdowns
+$DropdownMarker = "✓ "
+
 # Will hold hashtable from $Script:Themes
 $script:CurrentTheme = $null
 $script:CurrentThemePalette = $null
@@ -3502,6 +3505,9 @@ function Set-Item {
     $itemTheme = Get-ItemTheme -Item $Item
     Set-Theme -ThemeName $itemTheme
 
+    # update theme dropdown in MenuBar
+    Update-DropdownSelection -Dropdown $script:ThemeCombo -SelectedItem $itemTheme
+
     if ($Item.Type -eq "group") {
         # Create buttons for this group
         Update-ButtonsForGroup -GroupItem $Item
@@ -3550,6 +3556,9 @@ function Apply-JobConfig {
 
     # Set as current config
     Set-JobConfig -ConfigName $ConfigName
+
+    # update config dropdown in MenuBar
+    Update-DropdownSelection -Dropdown $script:ConfigDropdown -SelectedItem $ConfigName
 
     # Refresh UI
     Populate-LeftPanel
@@ -3810,10 +3819,16 @@ function Create-ThemeMenuItem {
         $menuItem = New-Object System.Windows.Forms.ToolStripMenuItem
         $menuItem.Text = $themeName
         $menuItem.Add_Click({
+            # Get raw text (strip out any marker)
+            $selectedText = $this.Text.replace($DropdownMarker, "")
+
             # Regular user selection: apply theme and indicate user selection
-            Apply-Theme -themeName $this.Text
+            Apply-Theme -themeName $selectedText
             # set user selected theme so group switching won't override it
-            $script:UserSelectedTheme = $this.Text
+            $script:UserSelectedTheme = $selectedText
+
+            # update the dropdown to show this selection
+            Update-DropdownSelection -Dropdown $this.OwnerItem -SelectedItem $selectedText
         })
         $null = $themeMenu.DropDownItems.Add($menuItem)
     }
@@ -3831,6 +3846,7 @@ function Create-ThemeMenuItem {
         $script:UserSelectedTheme = $null
         $themeToApply = Get-ItemTheme -Item $script:CurrentItem
         Apply-Theme -themeName $themeToApply
+        Update-DropdownSelection -Dropdown $this.OwnerItem
     })
     $null = $themeMenu.DropDownItems.Add($resetItem)
 
@@ -3863,7 +3879,14 @@ function Create-ConfigMenuItem {
         $menuItem = New-Object System.Windows.Forms.ToolStripMenuItem
         $menuItem.Text = $configName
         $menuItem.Add_Click({
-            Apply-JobConfig -ConfigName $this.Text
+            # Apply the config (remove checkmark from the name)
+            Apply-JobConfig -ConfigName $this.Text.Replace($DropdownMarker, "")
+
+            # WARNING: Do NOT call Update-DropdownSelection to update the checkmark
+            # - Apply-JobConfig already calls Update-DropSelection
+            # - As a result, after Apply-JobConfig, $this.Text will now have a checkmark
+            # - Thus, if you send $this.Text to Update-DropdownSelection it will fail
+            #   due to having a checkmark
         })
         $null = $configMenu.DropDownItems.Add($menuItem)
     }
@@ -4184,6 +4207,77 @@ function Populate-LeftPanel {
 # =============================================================================
 # GENERAL HELPER FUNCTIONS
 # =============================================================================
+
+<#
+.SYNOPSIS
+    Updates checkmark indicators in a dropdown menu to show the currently selected item.
+
+.DESCRIPTION
+    Removes the checkmark prefix from all items in the specified dropdown menu.
+    If a selected item name is provided, adds a checkmark prefix to the matching item.
+
+    This function is used by both the Config and Theme menus to provide visual
+    feedback of the current selection. The checkmark marker is defined globally
+    as $script:DropdownMarker (default "✓ ").
+
+.PARAMETER Dropdown
+    The ToolStripMenuItem that serves as the parent dropdown menu (e.g., the Config
+    or Theme menu). Its DropDownItems collection will be scanned for items to update.
+
+.PARAMETER SelectedItem
+    The text of the item that should receive the checkmark. If omitted or $null,
+    all checkmarks are cleared from the dropdown (useful for Reset operations).
+
+.EXAMPLE
+    # Clear all checkmarks from the Config menu
+    Update-DropdownSelection -Dropdown $configMenu
+
+.EXAMPLE
+    # Mark "work" as selected in the Config menu
+    Update-DropdownSelection -Dropdown $configMenu -SelectedItem "work"
+
+.EXAMPLE
+    # Inside a menu item click handler
+    $menuItem.Add_Click({
+        Update-DropdownSelection -Dropdown $this.OwnerItem -SelectedItem $this.Text
+        Apply-JobConfig -ConfigName $this.Text
+    })
+
+.NOTES
+    This function modifies the Text property of menu items in place. It does not
+    rebuild the menu or create new objects.
+#>
+function Update-DropdownSelection {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Windows.Forms.ToolStripMenuItem]$Dropdown,
+        [Parameter(Mandatory = $false)]
+        [string]$SelectedItem = $null
+    )
+
+    if ($null -eq $Dropdown.DropDownItems) {
+        throw "Update-DropdownSelection: Dropdown.DropDownItems is null. The menu item may not be properly initialized."
+    }
+
+    # Remove checkmark from all items in this menu
+    $found = $false
+    foreach ($item in $Dropdown.DropDownItems) {
+        if ($item.Text.StartsWith($DropdownMarker)) {
+            $item.Text = $item.Text.Substring(2)
+        }
+
+        # Add checkmark to desired item (if one passed; else will be cleared)
+        if ($SelectedItem -and $item.Text -eq $SelectedItem) {
+            $found = $true
+            $item.Text = $DropdownMarker + $item.Text
+        }
+    }
+
+    # throw error if never found this selection
+    if ($SelectedItem -and -not $found) {
+        throw "Update-DropdownSelection: Selected item '$SelectedItem' not found in dropdown menu. This may indicate an issue with menu population logic."
+    }
+}
 
 <#
 .SYNOPSIS
