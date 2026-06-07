@@ -3670,6 +3670,11 @@ function Create-ConfigDropdown {
         $configCombo.SelectedItem = $script:CurrentConfigName
     }
 
+    # hide the config dropdown if there's only one element
+    if ($configCombo.Items.Count -le 1) {
+        $configPanel.Visible = $false
+    }
+
     $configCombo.Add_SelectedIndexChanged({
         if ($script:SuppressConfigEvent -or $script:CurrentRunningJob) { return }
         $selected = $this.SelectedItem.ToString()
