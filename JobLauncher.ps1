@@ -112,8 +112,8 @@ $LogIncludeEnvironmentInfo = $true
 $LogTimestampEntries = $true
 
 # --- Default Values ---
-$DefaultSettingsPath = "launcher_settings.json"  # Path to launcher settings
-$DefaultJobConfigsDirectory = ".\\job_configs"   # default dir for job JSON files (can be overwritten in launcher_settings.json)
+$DefaultSettingsPath = Join-Path $PSScriptRoot "launcher_settings.json" # Path to launcher settings
+$DefaultJobConfigsDirectory = Join-Path $PSScriptRoot "job_configs" # default dir for job JSON files (can be overwritten in launcher_settings.json)
 $DefaultLogsDirectoryName = "Logs"  # Name of default log folder (relative to script; used if JSON doesn't specify) 
 $DefaultLogsDirectory = Join-Path -Path (Split-Path -Path $script:MyInvocation.MyCommand.Path -Parent) -ChildPath $DefaultLogsDirectoryName
 $DefaultTimeoutSeconds = 30
