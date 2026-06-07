@@ -4343,9 +4343,11 @@ function Populate-LeftPanel {
         if ($script:FormControls.ToggleButton -and $script:FormControls.ToggleButton.Tag -eq $null) {
             Set-ToggleButton -Button $script:FormControls.ToggleButton -State $buttonState
         }
-        Set-ButtonVisibility -Button $script:FormControls.ToggleButton -Visible $true
-    } else {
-        Set-ButtonVisibility -Button $script:FormControls.ToggleButton -Visible $false
+    }
+
+    # update visibility if button exists (Set-ButtonVisibility will fail if -Button is $null)
+    if ($script:FormControls.ContainsKey("ToggleButton") -and $script:FormControls.ToggleButton) {
+        Set-ButtonVisibility -Button $script:FormControls.ToggleButton -Visible $showButton
     }
 
     Initialize-LeftPanel -Item $currSelectedItem
