@@ -3374,7 +3374,6 @@ function Update-ButtonStates {
     # Disable config dropdown if job running
     if ($script:ConfigDropdown) {
         $script:ConfigDropdown.Enabled = (-not $Running)
-        # Also gray out visually (ComboBox doesn't have good disabled styling, but enabled=false works)
     }
 
     if ($script:KillButton) {
@@ -3559,9 +3558,6 @@ function Apply-JobConfig {
     # Set as current config
     Set-JobConfig -ConfigName $ConfigName
 
-    # set config dropdown
-    Set-Dropdown -Dropdown $script:ConfigDropdown -NewValue $ConfigName
-
     # Refresh UI
     Populate-LeftPanel
 }
@@ -3649,44 +3645,6 @@ function Create-ThemeDropdown {
     })
 
     return $themeCombo
-}
-
-<#
-.SYNOPSIS
-    Create config selection dropdown to the toolbar.
-#>
-function Create-ConfigDropdown {
-
-    $configCombo = New-Object System.Windows.Forms.ComboBox
-    $configCombo.DropDownStyle = "DropDownList"
-    $configCombo.Width = 150
-    $configCombo.IntegralHeight = $false
-
-    foreach ($configName in ($script:AvailableConfigs.Keys | Sort-Object)) {
-        $null = $configCombo.Items.Add($configName)
-    }
-
-    if ($script:CurrentConfigName -and $configCombo.Items.Contains($script:CurrentConfigName)) {
-        $configCombo.SelectedItem = $script:CurrentConfigName
-    }
-
-    # hide the config dropdown if there's only one element
-    if ($configCombo.Items.Count -le 1) {
-        $configPanel.Visible = $false
-    }
-
-    $configCombo.Add_SelectedIndexChanged({
-        if ($script:SuppressConfigEvent -or $script:CurrentRunningJob) { return }
-        $selected = $this.SelectedItem.ToString()
-        if ($selected -ne $script:CurrentConfigName) {
-            Apply-JobConfig -ConfigName $selected
-            $script:SuppressConfigEvent = $true
-            $this.SelectedItem = $script:CurrentConfigName
-            $script:SuppressConfigEvent = $false
-        }
-    })
-
-    return $configCombo
 }
 
 <#
@@ -3876,10 +3834,9 @@ function Initialize-Toolbar {
     #$toolbar.AutoSize = $true
     $toolbar.AutoSize = $false
     #$toolbar.AutoSizeMode = "GrowAndShrink"
-    $toolbar.ColumnCount = 4
+    $toolbar.ColumnCount = 3
     $toolbar.ColumnStyles.Clear()
     $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))  # Col 0: Theme
-    $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))  # Col 1: Config
     $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100))) # Col 2: Spacer
     $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))  # Col 3: Kill button
 
@@ -3902,31 +3859,11 @@ function Initialize-Toolbar {
     $null = $themePanel.Controls.Add($themeCombo)
     $null = $toolbar.Controls.Add($themePanel, 0, 0)
 
-    # === Column 1: Config selector ===
-    $configPanel = New-Object System.Windows.Forms.FlowLayoutPanel
-    $configPanel.AutoSize = $true
-    $configPanel.FlowDirection = "LeftToRight"
-    $configPanel.Margin = New-Object System.Windows.Forms.Padding(5, 0, 5, 0)
-
-    $configLabel = New-Object System.Windows.Forms.Label
-    $configLabel.Text = "Config:"
-    $configLabel.AutoSize = $true
-    $configLabel.TextAlign = "MiddleLeft"
-
-    # === Create Config dropdown ===
-
-    $configCombo = Create-ConfigDropdown
-    $script:ConfigDropdown = $configCombo
-
-    $null = $configPanel.Controls.Add($configLabel)
-    $null = $configPanel.Controls.Add($configCombo)
-    $null = $toolbar.Controls.Add($configPanel, 1, 0)
-
     # === Column 2: Spacer ===
     $spacer = New-Object System.Windows.Forms.Panel
     $spacer.Dock = "Fill"
     #$spacer.Margin = New-Object System.Windows.Forms.Padding(0)
-    $null = $toolbar.Controls.Add($spacer, 2, 0)
+    $null = $toolbar.Controls.Add($spacer, 1, 0)
 
     # === Column 3: Kill button ===
     $killButton = New-Object System.Windows.Forms.Button
@@ -3950,10 +3887,79 @@ function Initialize-Toolbar {
     # set initial styling
     Update-KillButton -KillButton $killButton -Enable $false
 
-    $null = $toolbar.Controls.Add($killButton, 3, 0)
+    $null = $toolbar.Controls.Add($killButton, 2, 0)
     $script:KillButton = $killButton
 
+    $toolbar.Margin = New-Object System.Windows.Forms.Padding(0)
+
     return $toolbar
+}
+
+<#
+.SYNOPSIS
+    Creates the Config menu item for the menu bar.
+
+.DESCRIPTION
+    Builds a ToolStripMenuItem named "Config" populated with all available
+    job configuration names from $script:AvailableConfigs. Each config name
+    is added as a submenu item with a click handler that calls Apply-JobConfig.
+
+    The menu is dynamically populated based on discovered configs at runtime.
+
+.OUTPUTS
+    [System.Windows.Forms.ToolStripMenuItem]
+
+.NOTES
+    Does not add a checkmark indicator for the currently active config.
+#>
+function Create-ConfigMenuItem {
+    $configMenu = New-Object System.Windows.Forms.ToolStripMenuItem
+    $configMenu.Text = "&Config"  # Alt+C shortcut
+
+    # Populate with available configs
+    foreach ($configName in ($script:AvailableConfigs.Keys | Sort-Object)) {
+        $menuItem = New-Object System.Windows.Forms.ToolStripMenuItem
+        $menuItem.Text = $configName
+        $menuItem.Add_Click({
+            Apply-JobConfig -ConfigName $this.Text
+        })
+        $null = $configMenu.DropDownItems.Add($menuItem)
+    }
+    return $configMenu 
+}
+
+<#
+.SYNOPSIS
+    Creates the main menu bar for the application.
+.DESCRIPTION
+    Builds a MenuStrip with extensible menu items. Currently includes
+    a "Config" menu populated with available job configurations.
+    Additional menus can be added by following the same pattern.
+.OUTPUTS
+    [System.Windows.Forms.MenuStrip] - Configured menu strip.
+#>
+function Create-MenuStrip {
+    $menuStrip = New-Object System.Windows.Forms.MenuStrip
+
+    # === Config Menu ===
+
+    $configMenu = Create-ConfigMenuItem
+    $script:ConfigDropdown = $configMenu
+
+    # === Construct MenuStrip ===
+
+    $null = $menuStrip.Items.Add($configMenu)
+
+    # === Future menus can be added here ===
+    # Example:
+    # $editMenu = New-Object System.Windows.Forms.ToolStripMenuItem
+    # $editMenu.Text = "&Edit"
+    # $menuStrip.Items.Add($editMenu)
+
+    $menuStrip.Padding = New-Object System.Windows.Forms.Padding(0)
+    $menuStrip.Margin = New-Object System.Windows.Forms.Padding(0)
+
+    return $menuStrip
 }
 
 <#
@@ -4004,9 +4010,10 @@ function Build-GUI {
     $rootTable = New-Object System.Windows.Forms.TableLayoutPanel
     $rootTable.Dock = "Fill"
     $rootTable.AutoSize = $false
-    $rootTable.RowCount = 2
+    $rootTable.RowCount = 3
     $rootTable.ColumnCount = 1
     $rootTable.RowStyles.Clear()
+    $null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))  # Menu bar
     #$null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))  # Toolbar
     # following line that's commented out: when i actually add the toolbar, the height is excessive. the solution is to get rid of
     # audoSize and instead use this fixed height. Since I'm not actually adding the toolbar in, I'm using AutoSize so that it doesn't take space
@@ -4014,10 +4021,14 @@ function Build-GUI {
     $null = $rootTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100))) # Content
 
     # =========================================================================
-    # TOOLBAR (Row 0)
+    # MENU STRIP (Row 0)
+    # =========================================================================
+    $menuStrip = Create-MenuStrip
+
+    # =========================================================================
+    # TOOLBAR (Row 1)
     # =========================================================================
     $toolbar = Initialize-Toolbar
-    $null = $rootTable.Controls.Add($toolbar, 0, 0)
 
     # =========================================================================
     # CONTENT PANEL (Row 1) - Contains SplitContainer for left/right layout
@@ -4070,7 +4081,14 @@ function Build-GUI {
     $null = $rightPanel.Controls.Add($outputTextBox, 0, 1)
     $null = $splitContainer.Panel2.Controls.Add($rightPanel)
     $null = $contentPanel.Controls.Add($splitContainer)
-    $null = $rootTable.Controls.Add($contentPanel, 0, 1)
+
+    # =========================================================================
+    # CONSTRUCT ROOT PANEL
+    # =========================================================================
+
+    $null = $rootTable.Controls.Add($menuStrip, 0, 0)
+    $null = $rootTable.Controls.Add($toolbar, 0, 1)
+    $null = $rootTable.Controls.Add($contentPanel, 0, 2)
 
     # =========================================================================
     # STATUS STRIP (bottom of form, outside TableLayoutPanel)
