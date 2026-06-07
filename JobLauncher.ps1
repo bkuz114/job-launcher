@@ -4308,6 +4308,9 @@ function Populate-LeftPanel {
         if ($script:FormControls.ToggleButton -and $script:FormControls.ToggleButton.Tag -eq $null) {
             Set-ToggleButton -Button $script:FormControls.ToggleButton -State $buttonState
         }
+        Set-ButtonVisibility -Button $script:FormControls.ToggleButton -Visible $true
+    } else {
+        Set-ButtonVisibility -Button $script:FormControls.ToggleButton -Visible $false
     }
 
     Initialize-LeftPanel -Item $currSelectedItem
@@ -4316,6 +4319,36 @@ function Populate-LeftPanel {
 # =============================================================================
 # GENERAL HELPER FUNCTIONS
 # =============================================================================
+
+<#
+.SYNOPSIS
+    Sets the visibility state of a button control.
+
+.DESCRIPTION
+    Safely sets a button's Visible property. If the button does not exist,
+    the function returns without error.
+
+.PARAMETER Button
+    The button control to modify.
+
+.PARAMETER Visible
+    $true to show the button, $false to hide it.
+
+.EXAMPLE
+    Set-ButtonVisibility -Button $script:FormControls.ToggleButton -Visible $false
+#>
+function Set-ButtonVisibility {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Windows.Forms.Button]$Button,
+        [Parameter(Mandatory = $true)]
+        [bool]$Visible
+    )
+
+    if ($Button) {
+        $Button.Visible = $Visible
+    }
+}
 
 <#
 .SYNOPSIS
