@@ -118,6 +118,7 @@ $DefaultLogsDirectoryName = "Logs"  # Name of default log folder (relative to sc
 $DefaultLogsDirectory = Join-Path -Path (Split-Path -Path $script:MyInvocation.MyCommand.Path -Parent) -ChildPath $DefaultLogsDirectoryName
 $DefaultTimeoutSeconds = 30
 $AppIcon = Join-Path $PSScriptRoot "assets\favicon.ico" # App icon
+$AppBranding = Join-Path $PSScriptRoot "assets\branding.png" # Image to display in toolbar
 
 # =============================================================================
 # END USER CONFIGURABLE SETTINGS
@@ -3838,11 +3839,26 @@ function Initialize-Toolbar {
     $toolbar.Dock = "Top"
     $toolbar.AutoSize = $true
     $toolbar.AutoSizeMode = "GrowAndShrink"
-    $toolbar.ColumnCount = 1
+    $toolbar.ColumnCount = 2
     $toolbar.ColumnStyles.Clear()
-    $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+    $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))  # Col 0: Logo
+    $null = $toolbar.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100))) # Col 1: Kill button
 
-    # === Kill button (right-aligned) ===
+    # === Column 0: Logo ===
+
+    $logoBox = New-Object System.Windows.Forms.PictureBox
+    if (Test-Path $AppBranding) {
+        $logoBox.Width = 64
+        $logoBox.Height = 64
+        $logoBox.SizeMode = "Zoom"
+        $logoBox.Image = [System.Drawing.Image]::FromFile($AppBranding)
+    } else {
+        Write-Host "WARNING: App branding image not found at $AppBranding"
+    }
+    $logoBox.Margin = New-Object System.Windows.Forms.Padding(8, 5, 8, 5)
+    $logoBox.Anchor = "Left"
+
+    # === Column 1: Kill button (right-aligned) ===
     $killButton = New-Object System.Windows.Forms.Button
     $killButton.Text = "Kill Current Job"
     $killButton.AutoSize = $true
@@ -3865,8 +3881,12 @@ function Initialize-Toolbar {
     # set initial styling
     Update-KillButton -KillButton $killButton -Enable $false
 
-    $null = $toolbar.Controls.Add($killButton)
     $script:KillButton = $killButton
+
+    # === Assemble Toolbar ===
+
+    $null = $toolbar.Controls.Add($logoBox, 0, 0)
+    $null = $toolbar.Controls.Add($killButton, 1, 0)
 
     $toolbar.Margin = New-Object System.Windows.Forms.Padding(0)
 
