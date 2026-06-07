@@ -117,6 +117,8 @@ $DefaultJobConfigsDirectory = Join-Path $PSScriptRoot "job_configs" # default di
 $DefaultLogsDirectoryName = "Logs"  # Name of default log folder (relative to script; used if JSON doesn't specify) 
 $DefaultLogsDirectory = Join-Path -Path (Split-Path -Path $script:MyInvocation.MyCommand.Path -Parent) -ChildPath $DefaultLogsDirectoryName
 $DefaultTimeoutSeconds = 30
+
+# --- App branding ---
 $AppIcon = Join-Path $PSScriptRoot "assets\favicon.ico" # App icon
 $AppBranding = Join-Path $PSScriptRoot "assets\branding.png" # Image to display in toolbar
 
