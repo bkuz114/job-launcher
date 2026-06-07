@@ -37,6 +37,8 @@ This document explains design decisions and non-obvious implementation details f
   - [Why Events vs. Background Threads](#why-events-vs-background-threads)
   - [Testing Streaming](#testing-streaming)
   - [Future Improvements (if needed)](#future-improvements-if-needed)
+- [Hacks](#hacks)
+  - [Theme Dropdown Event Suppression (Removed)](#theme-dropdown-event-suppression-removed)
 ---
 
 ## Object Model: Categories, Groups, and Jobs
@@ -350,6 +352,36 @@ Each line should appear every second, not all at once at the end.
 - **Buffer size tuning** – Adjust polling interval (`$TimeoutPollIntervalMs`) for different output frequencies
 
 ---
+
+## Hacks
+
+This section documents non-obvious workarounds, compromises, and retired patterns. Each entry explains why the hack existed and what constraints forced it.
+
+### Theme Dropdown Event Suppression (Removed)
+
+**Status:** Removed. The theme selector migrated from `ComboBox` to `MenuItem`, which eliminated the need for this hack.
+
+**The problem:**
+
+The theme dropdown was a `ComboBox`. When a user selected a theme, its `SelectedIndexChanged` event did two things:
+- Called `Apply-Theme` to change the GUI colors
+- Set `$script:UserSelectedTheme` to the selected theme name, which told the rest of the system to ignore JSON-defined themes and keep using the user's choice
+
+But `Apply-Theme` itself needed to update the dropdown's selected item (to keep it in sync with the theme it just applied). Setting `$dropdown.SelectedItem` triggered `SelectedIndexChanged` again, creating two problems:
+
+1. **Recursion:** The event called `Apply-Theme`, which set `SelectedItem`, which called the event again, which called `Apply-Theme` again, and so on.
+
+2. **Lost user override:** Even if recursion didn't crash, the programmatic update would set `$script:UserSelectedTheme` to whatever theme was applied by code, silently erasing the user's actual choice.
+
+**The hack:**
+
+A global flag, `$script:SuppressThemeDropdownEvent`, was set to `$true` before any programmatic update, then set back to `$false` after. The event handler checked this flag first; if `$true`, it returned immediately without doing anything. This prevented both the recursive `Apply-Theme` calls and the corruption of `$script:UserSelectedTheme`.
+
+**Why removal is safe:**
+
+The new `MenuItem`-based theme selector has no selection event to suppress. Clicking a menu item executes a command directly. The current theme is shown with a check mark, not by selecting an item in a dropdown. No programmatic sync is required.
+
+**For full code and historical context:** See GitHub Issue https://github.com/bkuz114/job-launcher/issues/12
 
 ## Future Sections (Placeholders)
 
