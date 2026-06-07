@@ -292,45 +292,33 @@ function Discover-JobConfigs {
         throw "WARNING: No JSON files found in $ConfigDir"
     }
 
-    # For each JSON file discovered:
-    # - Call Load-Configuration for each JSON file discovered
-    # - This will return config data to add to AvailableConfigs
-    # - This will reset globals, so save and reset them
-    #   to avoid polluting UI
+    # Call Load-Configuration for each JSON file discovered
     foreach ($file in $jsonFiles) {
         try {
+            $config = Load-Configuration -ConfigPath $file.FullName -Silent $true
 
-            # Temporarily override script globals to avoid polluting UI
-            $tempSettings = $script:Settings
-            $tempNavigation = $script:NavigationItems
-            $tempHasCategories = $script:HasCategories
+            if ($config) {
+                $errorContext = "Discover-JobConfigs: property missing from config hash returned from Load-Configuration"
+                $settings = Get-HashTableProperty -Hashtable $config -Key "settings" -FailIfMissing -ErrorContext $errorContext
+                $hasCategories = Get-HashTableProperty -Hashtable $config -Key "HasCategories" -FailIfMissing -ErrorContext $errorContext
+                $items = Get-HashTableProperty -Hashtable $config -Key "items" -FailIfMissing -ErrorContext $errorContext
+                $configName = Get-PSObjectProperty -Object $settings -Property "name"
 
-            $success = Load-Configuration -ConfigPath $file.FullName -Silent $true
-
-            if ($success) {
-                # Determine config name
-                $configName = $null
-                if ($script:Settings.PSObject.Properties['name'] -and $script:Settings.name) {
-                    $configName = $script:Settings.name
-                } else {
+                if (-not $configName) {
                     $configName = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
                 }
 
-                # Store a deep copy of relevant globals
                 $availableConfigs[$configName] = @{
                     Name = $configName
                     FilePath = $file.FullName
-                    Settings = $script:Settings
-                    NavigationItems = $script:NavigationItems
-                    HasCategories = $script:HasCategories
+                    Settings = $settings
+                    NavigationItems = $items
+                    HasCategories = $hasCategories
                 }
                 Write-Host "DEBUG: Loaded config '$configName' from $($file.Name)"
+            } else {
+                throw "Discover-JobConfigs: result from Load-Configuration was null"
             }
-
-            # Restore globals
-            $script:Settings = $tempSettings
-            $script:NavigationItems = $tempNavigation
-            $script:HasCategories = $tempHasCategories
         }
         catch {
             Write-Host "WARNING: Failed to load $($file.Name): $($_.Exception.Message)"
@@ -488,7 +476,7 @@ function Get-DefaultConfig {
     Processes the JSON configuration when it contains a "categories" array.
     Each category contains a "groups" array, and each group contains a "jobs" array.
 
-    Builds $script:NavigationItems with two item types:
+    Returns an array of items representing the navigation structure:
     - Type "category" for category headers (non-selectable, visual separation)
     - Type "group" for selectable groups (stores original group object in .Node)
 
@@ -498,11 +486,10 @@ function Get-DefaultConfig {
     The PSCustomObject from ConvertFrom-Json containing the full configuration.
 
 .EXAMPLE
-    Load-HierarchicalConfig -Config $config
+    $items = Load-HierarchicalConfig -Config $config
 
 .NOTES
-    Sets $script:NavigationItems. Caller is responsible for setting $script:HasCategories = $true.
-    Does NOT set $script:Settings – that is handled separately in Load-Configuration.
+    Caller is responsible for setting $script:HasCategories = $true.
 #>
 function Load-HierarchicalConfig {
     param(
@@ -513,7 +500,7 @@ function Load-HierarchicalConfig {
     if (-not $config.categories) { throw "Missing 'categories' array" }
     if ($config.categories.Count -eq 0) { throw "No categories defined" }
 
-    $script:NavigationItems = @()
+    $items = @()
 
     foreach ($category in $config.categories) {
         # Validate category has name
@@ -527,7 +514,7 @@ function Load-HierarchicalConfig {
             Node = $category
         }
         $categoryItem | Add-Member -MemberType ScriptMethod -Name ToString -Value { $this.Label } -Force
-        $script:NavigationItems += $categoryItem
+        $items += $categoryItem
 
         # Validate each group has name and jobs
         foreach ($group in $category.groups) {
@@ -562,9 +549,11 @@ function Load-HierarchicalConfig {
                 Parent = $category  # add parent category to retrieve theme from
             }
             $groupItem | Add-Member -MemberType ScriptMethod -Name ToString -Value { $this.Label } -Force
-            $script:NavigationItems += $groupItem
+            $items += $groupItem
         }
     }
+
+    return $items
 }
 
 <#
@@ -575,17 +564,17 @@ function Load-HierarchicalConfig {
     Processes the JSON configuration when it contains a "groups" array (and no "categories").
     Validates each group has a name, a non-empty jobs array, and each job has a name and command.
 
-    Stores the validated groups in $script:NavigationItems for use by Populate-FlatList.
+    Returns an array of group items, each containing .Label, .JobItems (array of wrapped job objects),
+    and .Node (original group object). Group items include a custom ToString method for ListBox display.
 
 .PARAMETER Config
     The PSCustomObject from ConvertFrom-Json containing the full configuration.
 
 .EXAMPLE
-    Load-FlatConfig -Config $config
+    $items = Load-FlatConfig -Config $config
 
 .NOTES
-    Sets $script:NavigationItems. Caller is responsible for setting $script:HasCategories = $false.
-    Does NOT set $script:Settings – that is handled separately in Load-Configuration.
+    Caller is responsible for setting $script:HasCategories = $false.
 #>
 function Load-FlatConfig {
     param(
@@ -596,7 +585,7 @@ function Load-FlatConfig {
     if (-not $config.groups) { throw "Missing 'groups' array" }
     if ($config.groups.Count -eq 0) { throw "No groups defined in configuration" }
 
-    $script:NavigationItems = @()
+    $items = @()
 
     # Validate each group has name and jobs
     foreach ($group in $config.groups) {
@@ -638,13 +627,15 @@ function Load-FlatConfig {
         # so that the ListBox data structure will be uniform across both hierarchical and flat case
         # (instead of strings in one, and objects in another)
         $groupItem | Add-Member -MemberType ScriptMethod -Name ToString -Value { $this.Label } -Force
-        $script:NavigationItems += $groupItem
+        $items += $groupItem
     }
+
+    return $items
 }
 
 <#
 .SYNOPSIS
-    Loads and validates the launcher configuration from a JSON file.
+    Loads and validates the launcher configuration from a JSON file, returning a hashtable with the parsed data.
 
 .DESCRIPTION
     Reads launcher_config.json from the script directory, parses it, and validates
@@ -652,24 +643,27 @@ function Load-FlatConfig {
     structure (categories containing groups) or a flat structure (groups only).
 
     Dispatches to either Load-HierarchicalConfig or Load-FlatConfig for
-    detailed validation and data loading. Stores the settings section globally.
+    detailed validation and data loading.
 
 .PARAMETER ConfigPath
     Full path to the launcher_config.json file.
 
 .EXAMPLE
-    $success = Load-Configuration -ConfigPath "C:\JobLauncher\launcher_config.json"
+    $configData = Load-Configuration -ConfigPath "C:\JobLauncher\launcher_config.json"
+    if ($configData) {
+        $script:Settings = $configData.settings
+        $script:HasCategories = $configData.hasCategories
+        $script:NavigationItems = $configData.items
+    }
 
 .NOTES
-    Returns $true on success, $false on failure (with error message displayed).
+    Returns a hashtable with the following keys on success:
+    - hasCategories: [bool] $true if hierarchical, $false if flat
+    - items: [array] Navigation items from Load-HierarchicalConfig or Load-FlatConfig
+    - settings: [PSCustomObject] The parsed settings section from the JSON
 
-    On success, sets:
-    - $script:Settings from config.settings
-    - $script:HasCategories = $true (if categories used) or $false (if groups used)
-    - $script:NavigationItems
-
-    On failure, shows a MessageBox error and returns $false.
-    Does NOT exit the script – caller should handle the failure.
+    Returns $null on failure (with error message displayed via MessageBox).
+    Caller should check the return value and handle failure appropriately.
 #>
 function Load-Configuration {
     param([string]$ConfigPath)
@@ -681,7 +675,7 @@ function Load-Configuration {
             [System.Windows.Forms.MessageBoxButtons]::OK,
             [System.Windows.Forms.MessageBoxIcon]::Error
         )
-        return $false
+        return $null
     }
 
     try {
@@ -693,19 +687,21 @@ function Load-Configuration {
 
         if ($config.PSObject.Properties['categories']) {
             # JSON has high level "categories" field -- hierarchical structure
-            Load-HierarchicalConfig -Config $config
-            $script:HasCategories = $true
+            $items = Load-HierarchicalConfig -Config $config
+            $hasCategories = $true
         } elseif ($config.PSObject.Properties['groups']) {
             # JSON has high level "groups" field -- flat structure
-            Load-FlatConfig -Config $config
-            $script:HasCategories = $false
+            $items = Load-FlatConfig -Config $config
+            $hasCategories = $false
         } else {
             throw "JSON must have either 'categories' or 'groups' array"
         }
 
-        # Store globally
-        $script:Settings = $config.settings
-        return $true
+        return @{
+            hasCategories = $hasCategories
+            items         = $items
+            settings      = $config.settings
+        }
     }
     catch {
         [System.Windows.Forms.MessageBox]::Show(
@@ -714,7 +710,7 @@ function Load-Configuration {
             [System.Windows.Forms.MessageBoxButtons]::OK,
             [System.Windows.Forms.MessageBoxIcon]::Error
         )
-        return $false
+        return $null
     }
 }
 
