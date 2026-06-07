@@ -3760,9 +3760,6 @@ function Initialize-ListBox {
             # Divider styling
             $font = New-Object System.Drawing.Font($sender.Font, [System.Drawing.FontStyle]::Bold)
             $brush = New-Object System.Drawing.SolidBrush($textColorDivider)
-            $format = New-Object System.Drawing.StringFormat
-            $format.Alignment = [System.Drawing.StringAlignment]::Center
-            $format.LineAlignment = [System.Drawing.StringAlignment]::Center
             $rectF = New-Object System.Drawing.RectangleF($bounds.X, $bounds.Y, $bounds.Width, $bounds.Height)
 
             # paint bg color to match Left Panel bg color
@@ -3774,13 +3771,17 @@ function Initialize-ListBox {
             $bgBrush.Dispose()
 
             # paint text color
-            $e.Graphics.DrawString($item.Label, $font, $brush, $rectF, $format)
+            $rect = [System.Drawing.Rectangle]::Ceiling($rectF)
+            $flags = [System.Windows.Forms.TextFormatFlags]::HorizontalCenter -bor [System.Windows.Forms.TextFormatFlags]::VerticalCenter
+            [System.Windows.Forms.TextRenderer]::DrawText($e.Graphics, $item.Label, $font, $rect, $brush.Color, $flags)
+            # DO NOT REVERT TO DrawString - GDI+ fails on emoji width calculation
+            # (produces trailing box character). TextRenderer (GDI) above handles
+            # Unicode surrogate pairs correctly.
 
             # Prevent selection highlight
             $e.DrawFocusRectangle()
 
             $font.Dispose()
-            $format.Dispose()
         } else {
 
             # Create brush based on selection state
@@ -3799,10 +3800,12 @@ function Initialize-ListBox {
 
             # Draw the text using $brush
             $rectF = New-Object System.Drawing.RectangleF($bounds.X, $bounds.Y, $bounds.Width, $bounds.Height)
-            $format = New-Object System.Drawing.StringFormat
-            $format.LineAlignment = [System.Drawing.StringAlignment]::Center
-            $e.Graphics.DrawString($item.Label, $sender.Font, $brush, $rectF, $format)
-            $format.Dispose()
+            $rect = [System.Drawing.Rectangle]::Ceiling($rectF)
+            $flags = [System.Windows.Forms.TextFormatFlags]::VerticalCenter
+            [System.Windows.Forms.TextRenderer]::DrawText($e.Graphics, $item.Label, $sender.Font, $rect, $brush.Color, $flags)
+            # DO NOT USE DrawString - GDI+ fails on emoji width calculation
+            # (produces trailing box character). TextRenderer (GDI) above handles
+            # Unicode surrogate pairs correctly.
 
             # Dispose after use
             $brush.Dispose()
