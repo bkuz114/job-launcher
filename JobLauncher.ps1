@@ -156,7 +156,6 @@ $script:CurrentDisplayedGroup = $null       # currently display group (group who
 $script:AvailableConfigs = @{}        # Hashtable of parsed configs (key = config name)
 $script:CurrentConfigName = $null     # Currently active config name
 $script:ConfigMenuItem = $null        # Reference to config dropdown control
-$script:SuppressConfigEvent = $false   # Prevents recursive config dropdown event
 
 # =============================================================================
 # ERROR HINTS
