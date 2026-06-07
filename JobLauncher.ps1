@@ -3894,7 +3894,7 @@ function Initialize-Toolbar {
     $killButton.Anchor = "Right"  # Align to the right side of the panel
     $killButton.Padding = New-Object System.Windows.Forms.Padding(10, 5, 10, 5)
     $killButton.FlatStyle = "Flat"
-    $killButton.Margin = New-Object System.Windows.Forms.Padding(5, 5, 5, 5)
+    $killButton.Margin = New-Object System.Windows.Forms.Padding(5, 5, 17, 5)
     # keep killButton always enabled and simulate disabled state
     # via styling + returning from click event if no job running.
     # Reason:
