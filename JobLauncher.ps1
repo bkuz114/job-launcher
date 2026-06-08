@@ -114,6 +114,7 @@ $LogTimestampEntries = $true
 # --- Default Values ---
 $DefaultSettingsPath = Join-Path $PSScriptRoot "launcher_settings.json" # Path to launcher settings
 $DefaultJobConfigsDirectory = Join-Path $PSScriptRoot "job_configs" # default dir for job JSON files (can be overwritten in launcher_settings.json)
+$DefaultJobWorkingDirectory = $PSScriptRoot # fallback working dir for jobs when not defined in JSON
 $DefaultLogsDirectoryName = "Logs"  # Name of default log folder (relative to script; used if JSON doesn't specify) 
 $DefaultLogsDirectory = Join-Path -Path (Split-Path -Path $script:MyInvocation.MyCommand.Path -Parent) -ChildPath $DefaultLogsDirectoryName
 $DefaultTimeoutSeconds = 30
@@ -1767,7 +1768,7 @@ function Get-JobTimeout {
     3. Job's parent category 'working_directory' property (hierarchical JSON only)
     4. job config's global setting 'default_working_directory'
     5. launcher_settings.json global setting 'default_working_directory'
-    6. Fallback to the script's directory where this function is defined
+    6. Script fallback ($DefaultJobWorkingDirectory)
 
 .PARAMETER JobItem
     The wrapped Job Item object representing a single executable job.
@@ -1797,9 +1798,6 @@ function Get-JobTimeout {
 
     Depends on global variable $script:Settings being defined with
     a 'default_working_directory' property.
-
-    The fallback path uses $PSScriptRoot which represents the directory
-    of the script containing this function.
 #>
 function Get-JobWorkingDirectory {
     param(
@@ -1836,7 +1834,7 @@ function Get-JobWorkingDirectory {
     }
 
     # 6. Fallback to the script's directory
-    return $PSScriptRoot
+    return $DefaultJobWorkingDirectory
 }
 
 <#
