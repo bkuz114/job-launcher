@@ -1,0 +1,163 @@
+{
+  "version": "3.0",
+  "settings": {
+    "name": "Networking Diagnostics",
+    "theme": "cyberpunk",
+    "view": "tree"
+  },
+  "categories": [
+    {
+      "name": "Connectivity",
+      "groups": [
+        {
+          "name": "Ping Tests",
+          "jobs": [
+            {
+              "name": "Ping Localhost",
+              "command": "ping 127.0.0.1 -n 4",
+              "timeout_seconds": 10
+            },
+            {
+              "name": "Ping Gateway",
+              "command": "ping 192.168.1.1 -n 4",
+              "timeout_seconds": 10
+            },
+            {
+              "name": "Ping Google DNS",
+              "command": "ping 8.8.8.8 -n 4",
+              "timeout_seconds": 10
+            },
+            {
+              "name": "Ping Cloudflare DNS",
+              "command": "ping 1.1.1.1 -n 4",
+              "timeout_seconds": 10
+            }
+          ]
+        },
+        {
+          "name": "Trace Route",
+          "jobs": [
+            {
+              "name": "Tracert Google",
+              "command": "tracert -d 8.8.8.8",
+              "timeout_seconds": 60
+            },
+            {
+              "name": "Tracert Cloudflare",
+              "command": "tracert -d 1.1.1.1",
+              "timeout_seconds": 60
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Configuration",
+      "groups": [
+        {
+          "name": "IP & DNS",
+          "jobs": [
+            {
+              "name": "Show IP Configuration (All)",
+              "command": "ipconfig /all"
+            },
+            {
+              "name": "Show IPv4 Addresses Only",
+              "command": "ipconfig | findstr IPv4"
+            },
+            {
+              "name": "Show DNS Cache",
+              "command": "ipconfig /displaydns",
+              "timeout_seconds": 15
+            },
+            {
+              "name": "Flush DNS Cache (Requires Admin)",
+              "command": "ipconfig /flushdns",
+              "__comment": "May require administrator privileges. Harmless if run without admin — will just fail gracefully."
+            }
+          ]
+        },
+        {
+          "name": "ARP & Routing",
+          "jobs": [
+            {
+              "name": "Show ARP Table",
+              "command": "arp -a"
+            },
+            {
+              "name": "Show Routing Table",
+              "command": "route print",
+              "timeout_seconds": 10
+            },
+            {
+              "name": "Show Network Adapters",
+              "command": "getmac /v",
+              "timeout_seconds": 10
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Diagnostics",
+      "groups": [
+        {
+          "name": "Port & Connection Tests",
+          "jobs": [
+            {
+              "name": "Show Active Connections",
+              "command": "netstat -an",
+              "timeout_seconds": 10
+            },
+            {
+              "name": "Show Listening Ports",
+              "command": "netstat -an | findstr LISTENING",
+              "timeout_seconds": 10
+            },
+            {
+              "name": "Show Established Connections",
+              "command": "netstat -an | findstr ESTABLISHED",
+              "timeout_seconds": 10
+            }
+          ]
+        },
+        {
+          "name": "DNS Lookups",
+          "jobs": [
+            {
+              "name": "nslookup google.com",
+              "command": "nslookup google.com",
+              "timeout_seconds": 15
+            },
+            {
+              "name": "nslookup github.com",
+              "command": "nslookup github.com",
+              "timeout_seconds": 15
+            },
+            {
+              "name": "nslookup stackoverflow.com",
+              "command": "nslookup stackoverflow.com",
+              "timeout_seconds": 15
+            }
+          ]
+        },
+        {
+          "name": "HTTP Headers (Safe)",
+          "jobs": [
+            {
+              "name": "Check Google Headers",
+              "command": "curl -I https://google.com",
+              "timeout_seconds": 15,
+              "__comment": "Uses curl if available on Windows 10 build 17063+. Falls back to alias if not."
+            },
+            {
+              "name": "Check GitHub Headers",
+              "command": "curl -I https://github.com",
+              "timeout_seconds": 15
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
