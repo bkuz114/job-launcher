@@ -71,9 +71,9 @@
           "jobs": [
             {
               "name": "All Drivers (First 30)",
-              "command": "powershell -Command \"driverquery /si | Select-Object -First 32\"",
+              "command": "driverquery /v | powershell -Command \"$input | Select-Object -First 32\"",
               "timeout_seconds": 15,
-              "__comment": "Exit code 1 is normal due to early pipeline termination; output is still valid."
+              "__comment": ""
             },
             {
               "name": "Signed Drivers Only",
@@ -83,7 +83,7 @@
             },
             {
               "name": "Problem Drivers (If Any)",
-              "command": "powershell -Command \"driverquery /v | Where-Object { $_ -match 'error' }\"",
+              "command": "driverquery /v | findstr /i \"error\"",
               "timeout_seconds": 15,
               "__comment": "Filters driver output for lines containing 'error' (case-insensitive)."
             }
@@ -96,7 +96,7 @@
               "name": "Plug and Play Devices",
               "command": "pnputil /enum-devices | powershell -Command \"$input | Select-Object -First 50\"",
               "timeout_seconds": 10,
-              "__comment": "Lists PnP devices. Truncated to first 50 lines for performance. Exit code 1 is normal due to early pipeline termination; output is still valid."
+              "__comment": "Lists PnP devices. Truncated to first 50 lines for performance."
             },
             {
               "name": "Display Information",
@@ -128,9 +128,9 @@
             },
             {
               "name": "List All Event Log Names",
-              "command": "powershell -Command \"wevtutil el | Select-Object -First 30\"",
+              "command": "wevtutil el | powershell -Command \"$input | Select-Object -First 30\"",
               "timeout_seconds": 10,
-              "__comment": "Lists available event log names. Exit code 1 is normal due to early pipeline termination; output is still valid."
+              "__comment": "Lists available event log names."
             }
           ]
         }
@@ -143,14 +143,14 @@
           "name": "Task Queries (Safe)",
           "jobs": [
             {
-              "name": "All Scheduled Tasks (First 30)",
-              "command": "powershell -Command \"schtasks /query /fo LIST | Select-Object -First 30\"",
+              "name": "All Scheduled Tasks (First 100)",
+              "command": "schtasks /query /fo LIST | powershell -Command \"$input | Select-Object -First 100\"",
               "timeout_seconds": 20,
-              "__comment": "Lists scheduled tasks in LIST format, truncated to first 100 items. Exit code 1 is normal due to early pipeline termination; output is still valid."
+              "__comment": "Lists scheduled tasks in LIST format, truncated to first 100 items."
             },
             {
               "name": "Running Tasks Only",
-              "command": "powershell -Command \"schtasks /query /fo LIST /v | Where-Object { $_ -match 'Running' }\"",
+              "command": "schtasks /query /fo LIST /v | findstr /i \"Running\"",
               "timeout_seconds": 15,
               "__comment": "Filters scheduled tasks to show only those currently in 'Running' state."
             }
