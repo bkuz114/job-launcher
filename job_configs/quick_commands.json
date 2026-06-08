@@ -1,0 +1,133 @@
+{
+  "version": "3.0",
+  "settings": {
+    "default_timeout_seconds": 15,
+    "theme": "honey_sage",
+    "view": "flat"
+  },
+  "categories": [
+    {
+      "name": "Internal grouping only — categories hidden due to view:flat",
+      "__comment": "These categories exist for structural completeness but will NOT appear in the left panel because view is 'flat'. Only group names will be visible.",
+      "groups": [
+        {
+          "name": "Quick System Info",
+          "jobs": [
+            {
+              "name": "OS Version",
+              "command": "ver"
+            },
+            {
+              "name": "Computer Name",
+              "command": "hostname"
+            },
+            {
+              "name": "Current User",
+              "command": "whoami"
+            },
+            {
+              "name": "System Uptime",
+              "command": "wmic os get lastbootuptime",
+              "timeout_seconds": 5
+            }
+          ]
+        },
+        {
+          "name": "Disk & Memory Quick",
+          "jobs": [
+            {
+              "name": "C: Drive Free Space (GB)",
+              "command": "wmic logicaldisk where deviceid=\"C:\" get freespace /format:value",
+              "timeout_seconds": 5
+            },
+            {
+              "name": "Memory Usage (MB)",
+              "command": "wmic os get totalvisiblememorysize,freephysicalmemory /format:value",
+              "timeout_seconds": 5
+            },
+            {
+              "name": "All Drives Free Space",
+              "command": "wmic logicaldisk where drivetype=3 get deviceid,freespace /format:table",
+              "timeout_seconds": 10
+            }
+          ]
+        },
+        {
+          "name": "Process Quick Check",
+          "jobs": [
+            {
+              "name": "Top 5 Memory Hogs",
+              "command": "tasklist /fi \"STATUS eq running\" /nh | sort /R /+68 | powershell -Command \"$input | Select-Object -First 5\"",
+              "timeout_seconds": 10
+            },
+            {
+              "name": "Chrome Running?",
+              "command": "tasklist /fi \"IMAGENAME eq chrome.exe\" | find /i \"chrome.exe\"",
+              "timeout_seconds": 5
+            }
+          ]
+        },
+        {
+          "name": "Network Quick",
+          "jobs": [
+            {
+              "name": "My IP Address",
+              "command": "ipconfig | findstr IPv4",
+              "timeout_seconds": 5
+            },
+            {
+              "name": "Ping Google",
+              "command": "ping 8.8.8.8 -n 2",
+              "timeout_seconds": 10
+            },
+            {
+              "name": "DNS Lookup (google.com)",
+              "command": "nslookup google.com",
+              "timeout_seconds": 10
+            }
+          ]
+        },
+        {
+          "name": "DNS & Tests",
+          "jobs": [
+            {
+              "name": "Ping Localhost",
+              "command": "ping 127.0.0.1 -n 4",
+              "timeout_seconds": 10
+            },
+            {
+              "name": "Ping Google DNS",
+              "command": "ping 8.8.8.8 -n 4",
+              "timeout_seconds": 10
+            },
+            {
+              "name": "DNS Lookup (google.com)",
+              "command": "nslookup google.com",
+              "timeout_seconds": 15
+            }
+          ]
+        },
+        {
+          "name": "Files & Folders",
+          "jobs": [
+            {
+              "name": "List C:\\ Root (First 10)",
+              "command": "cmd.exe /c dir C:\\ /b | powershell -Command \"$input | Select-Object -First 10\"",
+              "timeout_seconds": 10
+            },
+            {
+              "name": "Show Temp Directory Path",
+              "command": "echo %TEMP%",
+              "timeout_seconds": 2
+            },
+            {
+              "name": "List Temp Files (First 10)",
+              "command": "dir %TEMP% /b | powershell -Command \"$input | Select-Object -First 10\"",
+              "timeout_seconds": 10
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
