@@ -1762,9 +1762,12 @@ function Get-JobTimeout {
 
 .DESCRIPTION
     Returns the working directory for a job by checking the following in order:
-    1. Job's 'working_directory' property (if present and non-empty)
-    2. Global script setting 'default_working_directory'
-    3. Fallback to the script's directory where this function is defined
+    1. Job's 'working_directory' property
+    2. Job's parent group 'working_directory' property
+    3. Job's parent category 'working_directory' property (hierarchical JSON only)
+    4. job config's global setting 'default_working_directory'
+    5. launcher_settings.json global setting 'default_working_directory'
+    6. Fallback to the script's directory where this function is defined
 
 .PARAMETER JobItem
     The wrapped Job Item object representing a single executable job.
