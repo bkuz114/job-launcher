@@ -1,6 +1,8 @@
 {
   "theme": "warm_pastels",
   "logs_directory": "",
+  "default_timeout_seconds": 30,
+  "default_working_directory": "C:\\Users\\user\\your_dir",
   "job_configs_directory": ".\\job_configs",
   "default_config": "launcher_config"
 }
