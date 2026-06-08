@@ -1771,7 +1771,9 @@ function Get-JobTimeout {
     5. launcher_settings.json global setting 'default_working_directory'
     6. Script fallback ($DefaultJobWorkingDirectory)
 
-    Resolves relative to global $WorkingDirectoryResolveDir
+    After resolution, the following processing occurs in order:
+    - Environment variables (using %VAR% syntax) are expanded
+    - Relative paths are resolved against $WorkingDirectoryResolveDir
 
 .PARAMETER JobItem
     The wrapped Job Item object representing a single executable job.
@@ -1796,6 +1798,9 @@ function Get-JobTimeout {
     $workingDir = Get-JobWorkingDirectory -JobItem $jobObject
 
 .NOTES
+    Environment variable expansion uses Windows %VAR% syntax (e.g., %TEMP%, %USERPROFILE%).
+    PowerShell $env:VAR syntax is not supported.
+
     The function does not validate whether the returned directory exists.
     Caller is responsible for existence checking.
 
@@ -1835,6 +1840,9 @@ function Get-JobWorkingDirectory {
     else {
         $workingDir = $DefaultJobWorkingDirectory
     }
+
+    # Expand environment variables (e.g., %TEMP%, %USERPROFILE%)
+    $workingDir = [System.Environment]::ExpandEnvironmentVariables($workingDir)
 
     # resolve path (relative to script location)
     if (-not [System.IO.Path]::IsPathRooted($workingDir)) {
