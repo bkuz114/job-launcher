@@ -167,18 +167,7 @@ $script:ConfigMenuItem = $null        # Reference to config dropdown control
 
 # list of common errors failed jobs might dispaly, and helpful hints to dispaly in logs/console
 
-$script:ErrorHints = @{
-    "The system cannot find the file specified" = @"
-
-
-HINT: Check the 'command' field for this job in the JSON configuration file.
-The first word must be an executable in your PATH or a full path to an .exe.
-
-Example: "cmd.exe /c echo hello" (good)
-Instead of: "echo hello" (bad — 'echo' is a shell built-in, not an executable)
-
-"@
-}
+$script:ErrorHints = @{}
 
 # =============================================================================
 # JSON LOADING
@@ -1512,7 +1501,7 @@ function Set-JobResultProperty {
     Creates a Process object for a blocking (normal) job.
 
 .DESCRIPTION
-    Parses the command string into executable and arguments.
+    Wraps job command in cmd.exe /c
     Configures ProcessStartInfo with:
     - Working directory (assumes $workingDir is in scope)
     - stdout/stderr redirection enabled
@@ -1526,8 +1515,6 @@ function Set-JobResultProperty {
     .detached, .timeout_seconds, and .working_directory.
 
 .NOTES
-    The first word of .command must be an executable in PATH or a full path.
-
     WorkingDirectory is currently optional. The function does not validate
     the directory or throw if missing — that responsibility falls to the
     caller (Invoke-Job). Whether WorkingDirectory should be mandatory is
@@ -1544,14 +1531,14 @@ function Get-JobProcessBlocking {
         [string]$WorkingDirectory
     )
 
-    # Parse command into executable and arguments
-    # Simple split on first space - handles quoted paths poorly but sufficient for cmd/powershell patterns
-    $parts = $Job.command -split ' ', 2
-    $executable = $parts[0]
-    $arguments = if ($parts.Count -gt 1) { $parts[1] } else { "" }
+    # get job command
+    $command = Get-JobProperty -Job $Job -Property "command" -FailIfMissing
+
+    # will wrap command in cmd /c
+    $arguments = "/c $command"
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $executable
+    $psi.FileName = "cmd.exe"
     $psi.Arguments = $arguments
     $psi.WorkingDirectory = $WorkingDirectory
     $psi.UseShellExecute = $false           # Required for redirection
