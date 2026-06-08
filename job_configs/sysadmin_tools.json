@@ -1,0 +1,162 @@
+{
+  "version": "3.0",
+  "settings": {
+    "default_timeout_seconds": 30,
+    "theme": "blue_gold",
+    "view": "list"
+  },
+  "categories": [
+    {
+      "name": "User & Security",
+      "groups": [
+        {
+          "name": "User Information",
+          "jobs": [
+            {
+              "name": "Current User Details",
+              "command": "whoami /all",
+              "timeout_seconds": 10,
+              "__comment": "Displays detailed security information for the current user."
+            },
+            {
+              "name": "Local Users (Safe List)",
+              "command": "net user",
+              "timeout_seconds": 10,
+              "__comment": "Lists all local user accounts (read-only, no modifications)."
+            },
+            {
+              "name": "Local Groups",
+              "command": "net localgroup",
+              "timeout_seconds": 10,
+              "__comment": "Lists all local security groups."
+            },
+            {
+              "name": "Administrators Group Members",
+              "command": "net localgroup administrators",
+              "timeout_seconds": 10,
+              "__comment": "Shows which users are in the local Administrators group."
+            }
+          ]
+        },
+        {
+          "name": "Security & Permissions",
+          "jobs": [
+            {
+              "name": "UAC Status",
+              "command": "reg query HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System /v EnableLUA",
+              "timeout_seconds": 5,
+              "__comment": "Checks if User Account Control is enabled (1 = enabled, 0 = disabled)."
+            },
+            {
+              "name": "Firewall Status",
+              "command": "netsh advfirewall show allprofiles",
+              "timeout_seconds": 10,
+              "__comment": "Shows Windows Firewall status for Domain, Private, and Public profiles."
+            },
+            {
+              "name": "Open Shared Files",
+              "command": "openfiles /query",
+              "timeout_seconds": 10,
+              "__comment": "Requires administrator privileges. Without elevation, fails with 'Access is denied'. Also requires 'openfiles /local on' and a system reboot once before this command will produce any useful output."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Hardware & Drivers",
+      "groups": [
+        {
+          "name": "Driver Information",
+          "jobs": [
+            {
+              "name": "All Drivers (First 30)",
+              "command": "powershell -Command \"driverquery /si | Select-Object -First 32\"",
+              "timeout_seconds": 15,
+              "__comment": "Exit code 1 is normal due to early pipeline termination; output is still valid."
+            },
+            {
+              "name": "Signed Drivers Only",
+              "command": "driverquery /si",
+              "timeout_seconds": 10,
+              "__comment": "Lists all signed drivers. Runs to completion, exit code 0."
+            },
+            {
+              "name": "Problem Drivers (If Any)",
+              "command": "powershell -Command \"driverquery /v | Where-Object { $_ -match 'error' }\"",
+              "timeout_seconds": 15,
+              "__comment": "Filters driver output for lines containing 'error' (case-insensitive)."
+            }
+          ]
+        },
+        {
+          "name": "Device Information",
+          "jobs": [
+            {
+              "name": "Plug and Play Devices",
+              "command": "pnputil /enum-devices | powershell -Command \"$input | Select-Object -First 50\"",
+              "timeout_seconds": 10,
+              "__comment": "Lists PnP devices. Truncated to first 50 lines for performance. Exit code 1 is normal due to early pipeline termination; output is still valid."
+            },
+            {
+              "name": "Display Information",
+              "command": "wmic desktopmonitor get name, screenheight, screenwidth",
+              "timeout_seconds": 5,
+              "__comment": "Retrieves monitor names and resolutions (may be empty on some systems)."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Event Logs (Read-Only)",
+      "groups": [
+        {
+          "name": "System Log Queries",
+          "jobs": [
+            {
+              "name": "Last 10 System Errors",
+              "command": "wevtutil qe System /c:10 /rd:true /f:text /q:\"*[System[(Level=2)]]\"",
+              "timeout_seconds": 15,
+              "__comment": "Retrieves the 10 most recent System event log errors (Level=2 = Error)."
+            },
+            {
+              "name": "Last 10 Application Errors",
+              "command": "wevtutil qe Application /c:10 /rd:true /f:text /q:\"*[System[(Level=2)]]\"",
+              "timeout_seconds": 15,
+              "__comment": "Retrieves the 10 most recent Application event log errors."
+            },
+            {
+              "name": "List All Event Log Names",
+              "command": "powershell -Command \"wevtutil el | Select-Object -First 30\"",
+              "timeout_seconds": 10,
+              "__comment": "Lists available event log names. Exit code 1 is normal due to early pipeline termination; output is still valid."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Scheduled Tasks",
+      "groups": [
+        {
+          "name": "Task Queries (Safe)",
+          "jobs": [
+            {
+              "name": "All Scheduled Tasks (First 30)",
+              "command": "powershell -Command \"schtasks /query /fo LIST | Select-Object -First 30\"",
+              "timeout_seconds": 20,
+              "__comment": "Lists scheduled tasks in LIST format, truncated to first 100 items. Exit code 1 is normal due to early pipeline termination; output is still valid."
+            },
+            {
+              "name": "Running Tasks Only",
+              "command": "powershell -Command \"schtasks /query /fo LIST /v | Where-Object { $_ -match 'Running' }\"",
+              "timeout_seconds": 15,
+              "__comment": "Filters scheduled tasks to show only those currently in 'Running' state."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
