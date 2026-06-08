@@ -1,0 +1,152 @@
+{
+  "version": "3.0",
+  "settings": {
+    "name": "System Health",
+    "theme": "ocean",
+    "default_timeout_seconds": 20,
+    "view": "list"
+  },
+  "categories": [
+    {
+      "name": "Operating System",
+      "groups": [
+        {
+          "name": "OS Information",
+          "jobs": [
+            {
+              "name": "Windows Version",
+              "command": "ver"
+            },
+            {
+              "name": "System Information (Summary)",
+              "command": "systeminfo | findstr /B /C:\"OS Name\" /C:\"OS Version\" /C:\"System Type\" /C:\"Total Physical Memory\"",
+              "timeout_seconds": 15
+            },
+            {
+              "name": "Last Boot Time",
+              "command": "systeminfo | findstr /C:\"System Boot Time\"",
+              "timeout_seconds": 15
+            },
+            {
+              "name": "Hotfixes (Quick)",
+              "command": "wmic qfe list brief /format:texttable",
+              "timeout_seconds": 10
+            }
+          ]
+        },
+        {
+          "name": "User & Environment",
+          "jobs": [
+            {
+              "name": "Current Username",
+              "command": "whoami"
+            },
+            {
+              "name": "Computer Name",
+              "command": "hostname"
+            },
+            {
+              "name": "Environment PATH Variable",
+              "command": "echo %PATH%",
+              "timeout_seconds": 5
+            },
+            {
+              "name": "List All Environment Variables",
+              "command": "set",
+              "timeout_seconds": 10
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Hardware",
+      "groups": [
+        {
+          "name": "CPU & Memory",
+          "jobs": [
+            {
+              "name": "Processor Information",
+              "command": "wmic cpu get name,numberofcores,numberoflogicalprocessors,maxclockspeed /format:table",
+              "timeout_seconds": 10
+            },
+            {
+              "name": "Memory Status",
+              "command": "wmic os get totalvisiblememorysize,freephysicalmemory /format:table",
+              "timeout_seconds": 10
+            },
+            {
+              "name": "CPU Usage (Current)",
+              "command": "wmic cpu get loadpercentage",
+              "timeout_seconds": 5
+            }
+          ]
+        },
+        {
+          "name": "Disk Information",
+          "jobs": [
+            {
+              "name": "All Drives Free Space",
+              "command": "wmic logicaldisk where drivetype=3 get deviceid,volumename,size,freespace /format:table",
+              "timeout_seconds": 10
+            },
+            {
+              "name": "C: Drive Free Space (GB)",
+              "command": "wmic logicaldisk where deviceid=\"C:\" get freespace /format:value",
+              "timeout_seconds": 5
+            },
+            {
+              "name": "Disk Performance (Read-Only)",
+              "command": "wmic diskdrive get model,size,status",
+              "timeout_seconds": 10
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Processes & Services",
+      "groups": [
+        {
+          "name": "Running Processes",
+          "jobs": [
+            {
+              "name": "Top 10 Processes by Memory",
+              "command": "tasklist /fi \"STATUS eq running\" /nh | sort /R /+68 | powershell -Command \"$input | Select-Object -First 10\"",
+              "timeout_seconds": 15
+            },
+            {
+              "name": "All Processes (First 20)",
+              "command": "tasklist | powershell -Command \"$input | Select-Object -First 22\"",
+              "timeout_seconds": 10
+            },
+            {
+              "name": "Chrome Processes Count",
+              "command": "tasklist /fi \"IMAGENAME eq chrome.exe\" | find /c /v \"\"",
+              "timeout_seconds": 5
+            },
+            {
+              "name": "Explorer.exe Status",
+              "command": "tasklist /fi \"IMAGENAME eq explorer.exe\""
+            }
+          ]
+        },
+        {
+          "name": "Services",
+          "jobs": [
+            {
+              "name": "Running Services (First 20)",
+              "command": "net start | findstr /v \"The following\" | findstr /v \"^\\.$\" | findstr /v \"^$\" | powershell -Command \"$input | Select-Object -First 20\"",
+              "timeout_seconds": 10
+            },
+            {
+              "name": "Stopped Services (First 15)",
+              "command": "wmic service where started=false get name,startmode /format:table | powershell -Command \"$input | Select-Object -First 18\"",
+              "timeout_seconds": 15
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
