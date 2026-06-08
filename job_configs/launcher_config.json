@@ -3,8 +3,7 @@
   "settings": {
     "logs_directory": "C:\\tmp\\JobLauncherLogs",
     "theme": "default",
-    "default_timeout_seconds": 30,
-    "default_working_directory": "C:\\Users\\user\\your_dir"
+    "default_timeout_seconds": 30
   },
   "categories": [
     {
