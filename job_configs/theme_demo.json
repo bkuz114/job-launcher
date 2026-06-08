@@ -1,0 +1,145 @@
+{
+  "version": "3.0",
+  "settings": {
+	"name": "Theme Demo",
+    "theme": "default",
+    "default_timeout_seconds": 30,
+    "__comment_settings": "Global fallback theme is 'default'. Category/group overrides below will demonstrate theme inheritance."
+  },
+  "categories": [
+    {
+      "name": "Ocean Category (applies to all groups below unless overridden)",
+      "theme": "ocean",
+      "__comment": "This category sets theme=ocean. Groups that don't specify a theme will inherit ocean.",
+      "groups": [
+        {
+          "name": "Forest Group (overrides category theme)",
+          "theme": "forest",
+          "jobs": [
+            {
+              "name": "Theme should be forest",
+              "command": "echo This group's theme is 'forest' (group-level override)",
+              "__comment": "Group overrides category, so theme=forest when this group is selected"
+            }
+          ]
+        },
+        {
+          "name": "Sunset Group (different override)",
+          "theme": "sunset",
+          "jobs": [
+            {
+              "name": "Theme should be sunset",
+              "command": "echo This group's theme is 'sunset'",
+              "__comment": "Demonstrates different themes per group"
+            }
+          ]
+        },
+        {
+          "name": "No Theme Group (inherits from category)",
+          "__comment": "This group has no theme field — inherits 'ocean' from parent category",
+          "jobs": [
+            {
+              "name": "Theme should be ocean (from category)",
+              "command": "echo This group inherits theme 'ocean' from the category",
+              "__comment": "No group-level theme, so falls back to category's 'ocean'"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Cyberpunk Category",
+      "theme": "cyberpunk",
+      "__comment": "Entirely different theme for this category and its groups",
+      "groups": [
+        {
+          "name": "Cyberpunk Group (inherits from category)",
+          "jobs": [
+            {
+              "name": "Theme should be cyberpunk",
+              "command": "echo Theme is 'cyberpunk' (inherited from category)",
+              "__comment": "Group inherits cyberpunk from category"
+            }
+          ]
+        },
+        {
+          "name": "Bumblebee Group (overrides category)",
+          "theme": "bumblebee",
+          "jobs": [
+            {
+              "name": "Theme should be bumblebee",
+              "command": "echo Group overrides category with 'bumblebee' theme",
+              "__comment": "Explicit group-level override"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "No Theme Category (falls back to settings)",
+      "__comment": "This category has no theme field — falls back to settings.theme = 'default'",
+      "groups": [
+        {
+          "name": "Group inherits from category (which falls back to settings)",
+          "jobs": [
+            {
+              "name": "Theme should be 'default' (from settings block)",
+              "command": "echo No category theme, no group theme → falls back to settings.theme='default'",
+              "__comment": "Demonstrates fallback to global settings"
+            }
+          ]
+        },
+        {
+          "name": "Group overrides with 'warm_pastels'",
+          "theme": "warm_pastels",
+          "jobs": [
+            {
+              "name": "Theme should be warm_pastels",
+              "command": "echo Group explicitly sets 'warm_pastels'",
+              "__comment": "Even though category has no theme, group explicitly defines one"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Mixed Theme Demonstrations",
+      "theme": "sunflower",
+      "groups": [
+        {
+          "name": "Lavender Group",
+          "theme": "lavender",
+          "jobs": [
+            {
+              "name": "Theme: lavender",
+              "command": "echo Lavender theme active"
+            },
+            {
+              "name": "Theme: lavender (still, no job-level theme)",
+              "command": "echo Still lavender because job doesn't override theme (not supported at job level)"
+            }
+          ]
+        },
+        {
+          "name": "Golden Lavender Group",
+          "theme": "golden_lavender",
+          "jobs": [
+            {
+              "name": "Theme: golden_lavender",
+              "command": "echo This demonstrates a less common theme name"
+            }
+          ]
+        },
+        {
+          "name": "No Theme Group (inherits sunflower from category)",
+          "jobs": [
+            {
+              "name": "Theme should be sunflower",
+              "command": "echo Inherited 'sunflower' from parent category"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
