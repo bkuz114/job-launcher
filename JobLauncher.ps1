@@ -115,6 +115,7 @@ $LogTimestampEntries = $true
 $DefaultSettingsPath = Join-Path $PSScriptRoot "launcher_settings.json" # Path to launcher settings
 $DefaultJobConfigsDirectory = Join-Path $PSScriptRoot "job_configs" # default dir for job JSON files (can be overwritten in launcher_settings.json)
 $DefaultJobWorkingDirectory = $PSScriptRoot # fallback working dir for jobs when not defined in JSON
+$WorkingDirectoryResolveDir = $PSScriptRoot # dir to resolve relative to if working dirs in JSON are relative
 $DefaultLogsDirectoryName = "Logs"  # Name of default log folder (relative to script; used if JSON doesn't specify) 
 $DefaultLogsDirectory = Join-Path -Path (Split-Path -Path $script:MyInvocation.MyCommand.Path -Parent) -ChildPath $DefaultLogsDirectoryName
 $DefaultTimeoutSeconds = 30
@@ -1770,6 +1771,8 @@ function Get-JobTimeout {
     5. launcher_settings.json global setting 'default_working_directory'
     6. Script fallback ($DefaultJobWorkingDirectory)
 
+    Resolves relative to global $WorkingDirectoryResolveDir
+
 .PARAMETER JobItem
     The wrapped Job Item object representing a single executable job.
 
@@ -1810,31 +1813,35 @@ function Get-JobWorkingDirectory {
 
     # 1. working_directory property directly on job itself
     if ($rawJob.PSObject.Properties['working_directory'] -and $rawJob.working_directory) {
-        return $rawJob.working_directory
+        $workingDir = $rawJob.working_directory
     }
-
     # 2. Parent group-level (only if Job is a Job Item with ParentGroup)
-    if ($JobItem.PSObject.Properties['ParentGroup'] -and $JobItem.ParentGroup.PSObject.Properties['working_directory'] -and $JobItem.ParentGroup.working_directory) {
-        return $JobItem.ParentGroup.working_directory
+    elseif ($JobItem.PSObject.Properties['ParentGroup'] -and $JobItem.ParentGroup.PSObject.Properties['working_directory'] -and $JobItem.ParentGroup.working_directory) {
+        $workingDir = $JobItem.ParentGroup.working_directory
     }
-
     # 3. Parent category-level (only if Job is a Job Item with ParentCategory)
-    if ($JobItem.PSObject.Properties['ParentCategory'] -and $JobItem.ParentCategory -and $JobItem.ParentCategory.PSObject.Properties['working_directory'] -and $JobItem.ParentCategory.working_directory) {
-        return $JobItem.ParentCategory.working_directory
+    elseif ($JobItem.PSObject.Properties['ParentCategory'] -and $JobItem.ParentCategory -and $JobItem.ParentCategory.PSObject.Properties['working_directory'] -and $JobItem.ParentCategory.working_directory) {
+        $workingDir = $JobItem.ParentCategory.working_directory
     }
-
     # 4. default_working_directory in "settings" of currently selected job configuration JSON
-    if ($script:Settings.PSObject.Properties['default_working_directory'] -and $script:Settings.default_working_directory) {
-        return $script:Settings.default_working_directory
+    elseif ($script:Settings.PSObject.Properties['default_working_directory'] -and $script:Settings.default_working_directory) {
+        $workingDir = $script:Settings.default_working_directory
     }
-
     # 5. default_working_directory in general launcher configuration JSON
-    if ($script:LauncherSettings.PSObject.Properties['default_working_directory'] -and $script:LauncherSettings.default_working_directory) {
-        return $script:LauncherSettings.default_working_directory
+    elseif ($script:LauncherSettings.PSObject.Properties['default_working_directory'] -and $script:LauncherSettings.default_working_directory) {
+        $workingDir = $script:LauncherSettings.default_working_directory
+    }
+    # 6. Fallback to the script's directory
+    else {
+        $workingDir = $DefaultJobWorkingDirectory
     }
 
-    # 6. Fallback to the script's directory
-    return $DefaultJobWorkingDirectory
+    # resolve path (relative to script location)
+    if (-not [System.IO.Path]::IsPathRooted($workingDir)) {
+        $workingDir = Join-Path -Path $WorkingDirectoryResolveDir -ChildPath $workingDir
+    }
+
+    return $workingDir
 }
 
 <#
