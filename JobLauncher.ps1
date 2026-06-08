@@ -2070,6 +2070,8 @@ function Invoke-Job {
         TimeoutSeconds = $timeoutSeconds
         LogFile = $logFile
     }
+    Write-OutputWithTimestamp "Job Name:    $jobName"
+    Write-OutputWithTimestamp "Job command: $jobCommand"
 
     # === Initialize process variable ===
 
