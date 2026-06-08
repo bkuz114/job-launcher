@@ -1,6 +1,7 @@
 {
   "version": "3.0",
   "settings": {
+    "name": "Quick Commands",
     "default_timeout_seconds": 15,
     "theme": "honey_sage",
     "view": "flat"

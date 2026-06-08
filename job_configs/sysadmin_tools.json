@@ -1,6 +1,7 @@
 {
   "version": "3.0",
   "settings": {
+    "name": "Sysadmin Tools",
     "default_timeout_seconds": 30,
     "theme": "blue_gold",
     "view": "list"

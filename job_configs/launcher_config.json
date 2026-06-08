@@ -1,6 +1,7 @@
 {
   "version": "3.0",
   "settings": {
+    "name": "General Tools",
     "logs_directory": "C:\\tmp\\JobLauncherLogs",
     "theme": "default",
     "default_timeout_seconds": 30
