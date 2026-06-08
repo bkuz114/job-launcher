@@ -1,0 +1,127 @@
+{
+  "version": "3.0",
+  "settings": {
+    "name": "Daily Driver",
+    "theme": "bumblebee"
+  },
+  "groups": [
+    {
+      "name": "System Quick Look",
+      "jobs": [
+        {
+          "name": "Who Am I",
+          "command": "whoami"
+        },
+        {
+          "name": "Hostname",
+          "command": "hostname"
+        },
+        {
+          "name": "OS Version",
+          "command": "ver"
+        },
+        {
+          "name": "Last Boot Time",
+          "command": "systeminfo | findstr /C:\"System Boot Time\"",
+          "timeout_seconds": 15
+        }
+      ]
+    },
+    {
+      "name": "Network Daily Checks",
+      "jobs": [
+        {
+          "name": "My IP Address",
+          "command": "ipconfig | findstr IPv4",
+          "timeout_seconds": 5
+        },
+        {
+          "name": "Ping Gateway",
+          "command": "ping 192.168.1.1 -n 2",
+          "timeout_seconds": 10
+        },
+        {
+          "name": "Ping Google DNS",
+          "command": "ping 8.8.8.8 -n 2",
+          "timeout_seconds": 10
+        },
+        {
+          "name": "DNS Lookup",
+          "command": "nslookup google.com",
+          "timeout_seconds": 10
+        }
+      ]
+    },
+    {
+      "name": "Disk & Memory",
+      "jobs": [
+        {
+          "name": "C: Drive Free Space",
+          "command": "wmic logicaldisk where deviceid=\"C:\" get freespace /format:value",
+          "timeout_seconds": 5
+        },
+        {
+          "name": "All Drives Free Space",
+          "command": "wmic logicaldisk where drivetype=3 get deviceid,volumename,freespace /format:table",
+          "timeout_seconds": 10
+        },
+        {
+          "name": "Memory Usage",
+          "command": "wmic os get totalvisiblememorysize,freephysicalmemory /format:value",
+          "timeout_seconds": 5
+        }
+      ]
+    },
+    {
+      "name": "Processes",
+      "jobs": [
+        {
+          "name": "Top 5 Processes by Memory",
+          "command": "tasklist /fi \"STATUS eq running\" /nh | sort /R /+68 | powershell -Command \"$input | Select-Object -First 5\"",
+          "timeout_seconds": 10
+        },
+        {
+          "name": "Explorer.exe Status",
+          "command": "tasklist /fi \"IMAGENAME eq explorer.exe\"",
+          "timeout_seconds": 5
+        }
+      ]
+    },
+    {
+      "name": "File Explorer",
+      "jobs": [
+        {
+          "name": "List Desktop",
+          "command": "dir %USERPROFILE%\\Desktop /b",
+          "timeout_seconds": 10,
+          "__comment": "Lists filenames only, no modifications"
+        },
+        {
+          "name": "Show Temp Folder",
+          "command": "echo %TEMP%",
+          "timeout_seconds": 2
+        },
+        {
+          "name": "List Temp (First 10)",
+          "command": "dir %TEMP% /b | powershell -Command \"$input | Select-Object -First 10\"",
+          "timeout_seconds": 10
+        }
+      ]
+    },
+    {
+      "name": "Environment Variables",
+      "jobs": [
+        {
+          "name": "Show PATH",
+          "command": "echo %PATH%",
+          "timeout_seconds": 5
+        },
+        {
+          "name": "Show All Environment Vars",
+          "command": "set",
+          "timeout_seconds": 10
+        }
+      ]
+    }
+  ]
+}
