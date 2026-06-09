@@ -14,26 +14,26 @@
           "jobs": [
             {
               "name": "Echo Hello World",
-              "command": "cmd.exe /c echo Hello from Job Launcher!",
+              "command": "echo Hello from Job Launcher!",
               "timeout_seconds": 10
             },
             {
               "name": "Show Current Date and Time",
-              "command": "cmd.exe /c echo %DATE% %TIME%"
+              "command": "echo %DATE% %TIME%"
             },
             {
               "name": "List C:\\ Root Directory (First 20 items)",
-              "command": "cmd.exe /c dir C:\\ /b | powershell.exe -Command \"$input | Select-Object -First 20\"",
+              "command": "dir C:\\ /b | powershell.exe -Command \"$input | Select-Object -First 20\"",
               "timeout_seconds": 15
             },
             {
               "name": "Show Current Working Directory",
-              "command": "cmd.exe /c echo %CD%",
+              "command": "echo %CD%",
               "working_directory": "C:\\Windows\\System32"
             },
             {
               "name": "Echo Multiple Lines",
-              "command": "cmd.exe /c (echo Line 1 & echo Line 2 & echo Line 3 & echo Line 4 & echo Line 5)",
+              "command": "(echo Line 1 & echo Line 2 & echo Line 3 & echo Line 4 & echo Line 5)",
               "timeout_seconds": 10
             }
           ]
@@ -48,27 +48,27 @@
           "jobs": [
             {
               "name": "Show Windows Version",
-              "command": "cmd.exe /c ver"
+              "command": "ver"
             },
             {
               "name": "Show Computer Name",
-              "command": "cmd.exe /c echo %COMPUTERNAME%"
+              "command": "echo %COMPUTERNAME%"
             },
             {
               "name": "Show Current Username",
-              "command": "cmd.exe /c echo %USERNAME%"
+              "command": "echo %USERNAME%"
             },
             {
               "name": "Show Environment Variables (PATH sample)",
-              "command": "cmd.exe /c echo %PATH%"
+              "command": "echo %PATH%"
             },
             {
               "name": "Show Processor Name",
-              "command": "cmd.exe /c echo %PROCESSOR_IDENTIFIER%"
+              "command": "echo %PROCESSOR_IDENTIFIER%"
             },
             {
               "name": "Show Number of Processors",
-              "command": "cmd.exe /c echo %NUMBER_OF_PROCESSORS%"
+              "command": "echo %NUMBER_OF_PROCESSORS%"
             }
           ]
         },
@@ -77,11 +77,11 @@
           "jobs": [
             {
               "name": "Show C: Drive Free Space (GB)",
-              "command": "cmd.exe /c dir C:\\"
+              "command": "dir C:\\"
             },
             {
               "name": "Show All Drives",
-              "command": "cmd.exe /c wmic logicaldisk get name, size, freespace"
+              "command": "wmic logicaldisk get name, size, freespace"
             }
           ]
         },
@@ -90,16 +90,16 @@
           "jobs": [
             {
               "name": "List Running Processes (First 10)",
-              "command": "cmd.exe /c tasklist | powershell -Command \"$input | Select-Object -First 12\"",
+              "command": "tasklist | powershell -Command \"$input | Select-Object -First 12\"",
               "timeout_seconds": 10
             },
             {
               "name": "Show Chrome Processes Count",
-              "command": "cmd.exe /c tasklist /FI \"IMAGENAME eq chrome.exe\" | find /c /v \"\""
+              "command": "tasklist /FI \"IMAGENAME eq chrome.exe\" | find /c /v \"\""
             },
             {
               "name": "Show Running Services",
-              "command": "cmd.exe /c net start | findstr /v \"The following\" | findstr /v \"^\\.$\" | findstr /v \"^$\""
+              "command": "net start | findstr /v \"The following\" | findstr /v \"^\\.$\" | findstr /v \"^$\""
             }
           ]
         }
@@ -113,19 +113,19 @@
           "jobs": [
             {
               "name": "Show IP Configuration",
-              "command": "cmd.exe /c ipconfig"
+              "command": "ipconfig"
             },
             {
               "name": "Show IP Address Only",
-              "command": "cmd.exe /c ipconfig | findstr IPv4"
+              "command": "ipconfig | findstr IPv4"
             },
             {
               "name": "Show Wireless Networks",
-              "command": "cmd.exe /c netsh wlan show profiles"
+              "command": "netsh wlan show profiles"
             },
             {
               "name": "Show ARP Table",
-              "command": "cmd.exe /c arp -a"
+              "command": "arp -a"
             }
           ]
         },
@@ -134,17 +134,17 @@
           "jobs": [
             {
               "name": "Ping Localhost",
-              "command": "cmd.exe /c ping 127.0.0.1 -n 4",
+              "command": "ping 127.0.0.1 -n 4",
               "timeout_seconds": 10
             },
             {
               "name": "Ping Google DNS",
-              "command": "cmd.exe /c ping 8.8.8.8 -n 4",
+              "command": "ping 8.8.8.8 -n 4",
               "timeout_seconds": 10
             },
             {
               "name": "DNS Lookup (google.com)",
-              "command": "cmd.exe /c nslookup google.com",
+              "command": "nslookup google.com",
               "timeout_seconds": 15
             }
           ]
@@ -159,11 +159,11 @@
           "jobs": [
             {
               "name": "Show Temp Directory Path",
-              "command": "cmd.exe /c echo %TEMP%"
+              "command": "echo %TEMP%"
             },
             {
               "name": "List Temp Files (First 10)",
-              "command": "cmd.exe /c dir %TEMP% /b"
+              "command": "dir %TEMP% /b"
             }
           ]
         }
@@ -177,15 +177,15 @@
           "jobs": [
             {
               "name": "Show Current Date",
-              "command": "cmd.exe /c date /t"
+              "command": "date /t"
             },
             {
               "name": "Show Current Time",
-              "command": "cmd.exe /c time /t"
+              "command": "time /t"
             },
             {
               "name": "Show Timezone",
-              "command": "cmd.exe /c tzutil /g"
+              "command": "tzutil /g"
             }
           ]
         },
@@ -194,7 +194,7 @@
           "jobs": [
             {
               "name": "Show Active Power Plan",
-              "command": "cmd.exe /c powercfg /getactivescheme"
+              "command": "powercfg /getactivescheme"
             }
           ]
         }
@@ -228,7 +228,7 @@
           "jobs": [
             {
               "name": "Echo Hello (cmd)",
-              "command": "cmd.exe /c echo Hello from detached job",
+              "command": "echo Hello from detached job",
               "detached": true
             },
             {
@@ -238,7 +238,7 @@
             },
             {
               "name": "List Directory (cmd)",
-              "command": "cmd.exe /c dir C:\\",
+              "command": "dir C:\\",
               "detached": true
             }
           ]
@@ -253,12 +253,12 @@
           "jobs": [
             {
               "name": "Countdown 30s (Test Completion)",
-              "command": "cmd.exe /c timeout /t 30 /nobreak",
+              "command": "timeout /t 30 /nobreak",
               "timeout_seconds": 60
             },
             {
               "name": "Infinite Loop (Test Kill Button)",
-              "command": "cmd.exe /c ping -t 127.0.0.1",
+              "command": "ping -t 127.0.0.1",
               "timeout_seconds": 300
             },
             {
@@ -278,7 +278,7 @@
             },
             {
               "name": "Success Then Error Exit Code",
-              "command": "cmd.exe /c echo This command will exit with code 1 & exit 1",
+              "command": "echo This command will exit with code 1 & exit 1",
               "timeout_seconds": 10
             }
           ]
@@ -287,17 +287,13 @@
           "name": "Error Handling",
           "jobs": [
             {
-              "name": "Missing Executable (Triggers Hint)",
-              "command": "imaginary.exe"
-            },
-            {
               "name": "Missing Working Directory (Fast Fail)",
-              "command": "cmd.exe /c echo This should not run",
+              "command": "echo This should not run",
               "working_directory": "C:\\ThisDirectoryDoesNotExist_ABCDEF"
             },
             {
               "name": "Non-zero Exit Code",
-              "command": "cmd.exe /c exit 1"
+              "command": "exit 1"
             }
           ]
         },
