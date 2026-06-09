@@ -2351,8 +2351,7 @@ function Load-Themes {
     }
 
     # Path to themes.json
-    $scriptDirectory = Split-Path -Path $script:MyInvocation.MyCommand.Path -Parent
-    $themesPath = Join-Path -Path $scriptDirectory -ChildPath "themes.json"
+    $themesPath = Join-Path -Path $PSScriptRoot -ChildPath "themes.json"
 
     if (-not (Test-Path -Path $themesPath)) {
         Write-Host "No themes.json found. Using built-in default theme."
