@@ -4028,8 +4028,16 @@ function Create-ConfigMenuItem {
         $menuItem = New-Object System.Windows.Forms.ToolStripMenuItem
         $menuItem.Text = $configName
         $menuItem.Add_Click({
+            # remove checkmark from selected text
+            $configSelected = $this.Text.Replace($DropdownMarker, "")
+
+            # don't apply new config if already selected (avoid GUI rebuild)
+            if ($configSelected -eq $script:CurrentConfigName) {
+                return
+            }
+
             # Apply the config (remove checkmark from the name)
-            Apply-JobConfig -ConfigName $this.Text.Replace($DropdownMarker, "")
+            Apply-JobConfig -ConfigName $configSelected
 
             # WARNING: Do NOT call Update-DropdownSelection to update the checkmark
             # - Apply-JobConfig already calls Update-DropSelection
