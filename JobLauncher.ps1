@@ -108,6 +108,7 @@ $TimeoutPollIntervalMs = 1000
 
 # --- Logging ---
 $DefaultLogsDirectory = Join-Path $PSScriptRoot "Logs" # Default logging directory to fall back to if not in JSON
+$RelativeLogPathBaseDirectory = $PSScriptRoot # Base directory for resolving relative log paths. Absolute paths are used as-is.
 $LogRetentionDays = 30
 $LogIncludeEnvironmentInfo = $true
 $LogTimestampEntries = $true
@@ -820,6 +821,11 @@ function Resolve-LogDirectory {
         if (-not $candidate) { continue }  # Skip empty/null candidates
 
         try {
+            # resolve path (relative to script location)
+            if (-not [System.IO.Path]::IsPathRooted($candidate)) {
+                $candidate = Join-Path -Path $RelativeLogPathBaseDirectory -ChildPath $candidate
+            }
+
             if (-not (Test-Path -Path $candidate)) {
                 New-Item -Path $candidate -ItemType Directory -Force | Out-Null
             }
