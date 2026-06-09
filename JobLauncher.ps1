@@ -777,7 +777,7 @@ function Generate-JobLogFilename {
 
 .DESCRIPTION
     Tests each candidate directory in priority order:
-    1. JSON settings.logs_directory (if provided and valid)
+    1. launcher_settings.json "logs_directory" (if provided and valid)
     2. $DefaultLogsDirectory (script default, relative to script location)
     3. Windows TEMP directory (ultimate fallback: %TEMP%\JobLauncherLogs)
 
@@ -803,8 +803,8 @@ function Resolve-LogDirectory {
 
     # Check if the 'settings > logs_directory' property exists in JSON and has a value
     $jsonLogDir = $null
-    if ($script:Settings -and $script:Settings.PSObject.Properties['logs_directory']) {
-        $jsonLogDir = $script:Settings.logs_directory
+    if ($script:LauncherSettings -and $script:LauncherSettings.PSObject.Properties['logs_directory']) {
+        $jsonLogDir = $script:LauncherSettings.logs_directory
     }
 
     # Define candidate log directories in priority order
