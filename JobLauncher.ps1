@@ -107,6 +107,8 @@ $KillTimeoutGraceSeconds = 5
 $TimeoutPollIntervalMs = 1000
 
 # --- Logging ---
+$DefaultLogsDirectoryName = "Logs"  # Name of default log folder (relative to script; used if JSON doesn't specify)
+$DefaultLogsDirectory = Join-Path -Path (Split-Path -Path $script:MyInvocation.MyCommand.Path -Parent) -ChildPath $DefaultLogsDirectoryName
 $LogRetentionDays = 30
 $LogIncludeEnvironmentInfo = $true
 $LogTimestampEntries = $true
@@ -116,8 +118,6 @@ $DefaultSettingsPath = Join-Path $PSScriptRoot "launcher_settings.json" # Path t
 $DefaultJobConfigsDirectory = Join-Path $PSScriptRoot "job_configs" # default dir for job JSON files (can be overwritten in launcher_settings.json)
 $DefaultJobWorkingDirectory = $PSScriptRoot # fallback working dir for jobs when not defined in JSON
 $WorkingDirectoryResolveDir = $PSScriptRoot # dir to resolve relative to if working dirs in JSON are relative
-$DefaultLogsDirectoryName = "Logs"  # Name of default log folder (relative to script; used if JSON doesn't specify) 
-$DefaultLogsDirectory = Join-Path -Path (Split-Path -Path $script:MyInvocation.MyCommand.Path -Parent) -ChildPath $DefaultLogsDirectoryName
 $DefaultTimeoutSeconds = 30
 
 # --- App branding ---
