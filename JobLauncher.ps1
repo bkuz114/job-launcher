@@ -120,6 +120,9 @@ $DefaultJobWorkingDirectory = $PSScriptRoot # fallback working dir for jobs when
 $WorkingDirectoryResolveDir = $PSScriptRoot # dir to resolve relative to if working dirs in JSON are relative
 $DefaultTimeoutSeconds = 30
 
+# --- Themes ---
+$ThemesFile = Join-Path $PSScriptRoot "themes.json" # JSON with script themes defined
+
 # --- App branding ---
 $AppIcon = Join-Path $PSScriptRoot "assets\favicon.ico" # App icon
 $AppBranding = Join-Path $PSScriptRoot "assets\branding.png" # Image to display in toolbar
@@ -2350,16 +2353,14 @@ function Load-Themes {
         $script:FallbackThemeName = $script:FallbackTheme
     }
 
-    # Path to themes.json
-    $themesPath = Join-Path -Path $PSScriptRoot -ChildPath "themes.json"
-
-    if (-not (Test-Path -Path $themesPath)) {
-        Write-Host "No themes.json found. Using built-in default theme."
+    # Check if themes.json exists
+    if (-not (Test-Path -Path $ThemesFile)) {
+        Write-Host "No themes.json found at $ThemesFile. Using built-in default theme."
         return
     }
 
     try {
-        $jsonContent = Get-Content -Path $themesPath -Raw -Encoding UTF8
+        $jsonContent = Get-Content -Path $ThemesFile -Raw -Encoding UTF8
         $userThemes = $jsonContent | ConvertFrom-Json
 
         foreach ($themeName in $userThemes.PSObject.Properties) {
