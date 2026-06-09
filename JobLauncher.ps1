@@ -107,8 +107,7 @@ $KillTimeoutGraceSeconds = 5
 $TimeoutPollIntervalMs = 1000
 
 # --- Logging ---
-$DefaultLogsDirectoryName = "Logs"  # Name of default log folder (relative to script; used if JSON doesn't specify)
-$DefaultLogsDirectory = Join-Path -Path (Split-Path -Path $script:MyInvocation.MyCommand.Path -Parent) -ChildPath $DefaultLogsDirectoryName
+$DefaultLogsDirectory = Join-Path $PSScriptRoot "Logs" # Default logging directory to fall back to if not in JSON
 $LogRetentionDays = 30
 $LogIncludeEnvironmentInfo = $true
 $LogTimestampEntries = $true
