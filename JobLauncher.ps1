@@ -82,7 +82,7 @@ $DefaultLogsDirectory = Join-Path $PSScriptRoot "Logs" # Default logging directo
 $RelativeLogPathBaseDirectory = $PSScriptRoot # Base directory for resolving relative log paths. Absolute paths are used as-is.
 $LogRetentionDays = 30
 $LogIncludeEnvironmentInfo = $true
-$LogTimestampEntries = $true
+$LogTimestampEntries = $true # adds timestamp to log entries
 $script:LogDir = $null # parent dir for any logs this script runs
 $script:LogFile = $null # the main runner logfile
 # valid log levels
@@ -734,7 +734,7 @@ function Load-Configuration {
 
 .DESCRIPTION
     Appends a formatted log line to the specified file. Each line includes:
-    - Timestamp (full date and time) unless -NoTimestamp is used
+    - Timestamp (full date and time) (unless -Timestamp $false)
     - Log level (DEBUG, INFO, WARN, ERROR, FATAL)
     - The message text
 
@@ -753,15 +753,15 @@ function Load-Configuration {
 .PARAMETER Level
     Severity level. Valid values: DEBUG, INFO, WARN, ERROR, FATAL. Default: INFO.
 
-.PARAMETER NoTimestamp
-    If specified, omits timestamp from the log line.
-    Use for raw output or lines where timestamp adds no value.
+.PARAMETER Timestamp
+    If $false, omits timestamp from the log line. Defaults to global $LogTimestampEntries
+    Use -Timestamp $false for raw output or lines where timestamp adds no value.
 
 .EXAMPLE
     Write-Log -LogPath $sessionLog -Text "Job started" -Level INFO
 
 .EXAMPLE
-    Write-Log -LogPath $jobLog -Text "Raw command output" -NoTimestamp
+    Write-Log -LogPath $jobLog -Text "Raw command output" -Timestamp $false
 
 .NOTES
     Requires global $LogLevels (hashtable) and $LogLevel (threshold string).
@@ -779,7 +779,7 @@ function Write-Log {
         [string]$Level = "INFO",
 
         [Parameter(Mandatory = $false)]
-        [switch]$NoTimestamp
+        [boolean]$Timestamp = $LogTimestampEntries
     )
 
     if (-not (Test-Path -Path $LogPath)) {
@@ -798,9 +798,9 @@ function Write-Log {
     }
 
     # Build line
-    $timestamp = if ($NoTimestamp) { "" } else { "[$(Get-HumanTimestamp)] " }
+    $ts = if ($Timestamp) { "[$(Get-HumanTimestamp)] " } else { "" }
     $levelTag = "[$Level] "
-    $line = $timestamp + $levelTag + $Text
+    $line = $ts + $levelTag + $Text
 
     try {
         $line | Out-File -FilePath $LogPath -Encoding UTF8 -Append -ErrorAction Stop
