@@ -1093,15 +1093,18 @@ function Initialize-Logging {
 .PARAMETER JobName
     The name of the job. Must not be null or empty.
 
+.PARAMETER ConfigName
+    The name of the config the job is defined in. Must not be null or empty.
+
 .PARAMETER Suffix
     Optional suffix to add before the .log extension (e.g., "detached").
     If provided, the format becomes: name_timestamp-suffix.log
 
 .EXAMPLE
-    Generate-JobLogFilename -JobName "My Job" -> "My_Job_20250101_120000.log"
-    Generate-JobLogFilename -JobName "My Job" -Suffix "detached" -> "My_Job_20250101_120000-detached.log"
-    Generate-JobLogFilename -JobName "My Job - (version B)" -> "My_Job_version_B_20250101_120000.log"
-    Generate-JobLogFilename -JobName "___" -> "20250101_120000.log"
+    Generate-JobLogFilename -JobName "My Job" -ConfigName "Daily Driver" -> "Daily_Driver_My_Job_20250101_120000.log"
+    Generate-JobLogFilename -JobName "My Job" -ConfigName "myjobs" -Suffix "detached" -> "myjobs_My_Job_20250101_120000-detached.log"
+    Generate-JobLogFilename -JobName "My Job - (version B)" -ConfigName "Networking: all" -> "Networking_all_My_Job_version_B_20250101_120000.log"
+    Generate-JobLogFilename -JobName "___" -ConfigName "___" -> "20250101_120000.log"
 
 .NOTES
     Throws an error if JobName is null or empty.
@@ -1110,6 +1113,8 @@ function Generate-JobLogFilename {
     param(
         [Parameter(Mandatory = $true)]
         [string]$JobName,
+        [Parameter(Mandatory = $true)]
+        [string]$ConfigName,
         [string]$Suffix = ""
     )
 
@@ -1117,8 +1122,15 @@ function Generate-JobLogFilename {
         throw "Generate-JobLogFilename: JobName cannot be null or empty"
     }
 
+    if ([string]::IsNullOrWhiteSpace($ConfigName)) {
+        throw "Generate-JobLogFilename: ConfigName cannot be null or empty"
+    }
+
+    # filename base is config name + job name
+    $filename = "${ConfigName}_${JobName}"
+
     # Replace any non-alphanumeric character with underscore
-    $safeName = $JobName -replace '[^a-zA-Z0-9]', '_'
+    $safeName = $filename -replace '[^a-zA-Z0-9]', '_'
 
     # Collapse multiple consecutive underscores into one
     $safeName = $safeName -replace '_+', '_'
@@ -1235,6 +1247,8 @@ function Resolve-LogDirectory {
     Throws an error if the log directory cannot be resolved.
 .PARAMETER JobName
     Name of the job used to generate the filename. Mandatory parameter.
+.PARAMETER ConfigName
+    Name of the config the job comes from. Mandatory parameter.
 .PARAMETER Suffix
     Optional suffix to append to the filename before the extension. Default is empty string.
 .PARAMETER Create
@@ -1253,6 +1267,8 @@ function Generate-JobLogFilepath {
     param(
         [Parameter(Mandatory = $true)]
         [string]$JobName,
+        [Parameter(Mandatory = $true)]
+        [string]$ConfigName,
         [string]$Suffix = "",
         [boolean]$Create = $false
     )
@@ -1272,7 +1288,7 @@ function Generate-JobLogFilepath {
     }
 
     # generate a log filename for job
-    $filename = Generate-JobLogFilename -JobName $JobName -Suffix $Suffix
+    $filename = Generate-JobLogFilename -JobName $JobName -ConfigName $ConfigName -Suffix $Suffix
     $fullPath = Join-Path -Path $script:LogDir -ChildPath $filename
     Write-Host "DEBUG: filepath generated $fullPath"
 
@@ -1297,6 +1313,8 @@ function Generate-JobLogFilepath {
     Created during JSON loading in Load-FlatConfig or Load-HierarchicalConfig.
     Contains what JSON contains: .name and .command properties, plus optional
     .detached, .timeout_seconds, and .working_directory.
+.PARAMETER ConfigName
+    The name of the config the job is from.
 .PARAMETER WorkingDirectory
     The working directory where the job will execute.
 .PARAMETER TimeoutSeconds
@@ -1317,6 +1335,8 @@ function Initialize-JobLog {
     param(
         [Parameter(Mandatory = $true)]
         [PSObject]$Job,
+        [Parameter(Mandatory = $true)]
+        [string]$ConfigName,
         [string]$WorkingDirectory,
         [int]$TimeoutSeconds,
         [string]$Suffix = ""
@@ -1337,7 +1357,7 @@ function Initialize-JobLog {
     # determine logfile
     # (if only one logfile per script run, Generate-JobLogFilepath will return $script:LogFile,
     # else will create a new file)
-    $logPath = Generate-JobLogFilepath -JobName $JobName -Suffix $Suffix -Create $true
+    $logPath = Generate-JobLogFilepath -JobName $JobName -ConfigName $ConfigName -Suffix $Suffix -Create $true
 
 $header = @"
 ================================================================================
@@ -1891,7 +1911,7 @@ function Get-JobProcessDetached {
     )
 
     # Create a separate log file to pipe content to
-    $logFile = Initialize-JobLog -Job $Job -WorkingDirectory $WorkingDirectory -Suffix "child"
+    $logFile = Initialize-JobLog -Job $Job -ConfigName $script:CurrentConfigName -WorkingDirectory $WorkingDirectory -Suffix "child"
 
     # Append a hint that this is for the detached child process
     Write-Log -LogPath $logFile -Text "This log is for the child process. stdout and stderr (if any) will be appended below."
@@ -2326,7 +2346,7 @@ function Invoke-Job {
 
     # === Initialize logfile with job header ==
 
-    $logFile = Initialize-JobLog -Job $rawJob -WorkingDirectory $workingDir -TimeoutSeconds $TimeoutSeconds
+    $logFile = Initialize-JobLog -Job $rawJob -ConfigName $script:CurrentConfigName -WorkingDirectory $workingDir -TimeoutSeconds $TimeoutSeconds
 
     # === Initialize result object ===
 
