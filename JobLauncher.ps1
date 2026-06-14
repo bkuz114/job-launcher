@@ -77,6 +77,7 @@ $script:FallbackThemeName = "default"
 # LOG CONFIGURATION
 # =============================================================================
 
+$IndividualJobLogs = $true # If true, creates individual logfiles for every job run (in addition to main runner log)
 $DefaultLogsDirectory = Join-Path $PSScriptRoot "Logs" # Default logging directory to fall back to if not in JSON
 $RelativeLogPathBaseDirectory = $PSScriptRoot # Base directory for resolving relative log paths. Absolute paths are used as-is.
 $LogRetentionDays = 30
@@ -1023,11 +1024,12 @@ PowerShell Version: $psVersion
 .DESCRIPTION
     Performs all logging initialization steps:
     1. Determines the base log directory via Resolve-LogDirectory
-    2. Generates a unique filename for the session log
-    3. Ensures the directory exists (via New-Item -Force)
-    4. Sets global $script:LogFile and $script:LogDir
-    5. Initializes the session log file with header and environment info
-    6. Returns the full path to the session log file
+    2. If $IndividualJobLogs is $true, creates a nested timestamped subdirectory
+    3. Generates a unique filename for the session log
+    4. Ensures the directory exists (via New-Item -Force)
+    5. Sets global $script:LogFile and $script:LogDir
+    6. Initializes the session log file with header and environment info
+    7. Returns the full path to the session log file
 
     Call this once at script startup, after loading configuration.
 
@@ -1038,7 +1040,7 @@ PowerShell Version: $psVersion
     Write-Log -LogPath $script:LogFile -Text "Session started"
 
 .NOTES
-    - Uses $LogIncludeEnvironmentInfo, and $LogLevels globally.
+    - Uses $IndividualJobLogs, $LogIncludeEnvironmentInfo, and $LogLevels globally.
     - Must be called **AFTER** Load-LauncherSettings (else Resolve-LogDirectory won't
       have access to user logging configurations in launcher_settings.json 
     - Sets script-scope globals as a side effect (intentional design decision: otherwise
@@ -1052,6 +1054,14 @@ function Initialize-Logging {
     # === Determine parent logging directory ===
 
     $logrunDir = Resolve-LogDirectory
+
+    # === Determine nested dir if any ===
+
+    # if individual logs per job, nest this
+    if ($IndividualJobLogs) {
+        $timestamp = Get-PathSafeTimestamp
+        $logrunDir = Join-Path -Path $logrunDir -ChildPath $timestamp
+    }
 
     # === Get safe name for main log runner ===
 
@@ -1229,7 +1239,8 @@ function Resolve-LogDirectory {
 .PARAMETER Suffix
     Optional suffix to append to the filename before the extension. Default is empty string.
 .PARAMETER Create
-    If $true, creates the log directory if it does not exist. Uses -Force to prevent errors if already exists.
+    If $true, creates the log file (with parent dirs) if it does not exist.
+    Uses -Force to create parent dirs if they do not yet exist.
 .EXAMPLE
     $path = Generate-JobLogFilepath -JobName "BackupJob" -Create $true
 .EXAMPLE
@@ -1247,19 +1258,28 @@ function Generate-JobLogFilepath {
         [boolean]$Create = $false
     )
 
-    $logRoot = Resolve-LogDirectory
-
-    if (-not $logRoot -or -not (Test-Path -Path $logRoot)) {
-        throw "Generate-JobLogFilepath: Failed to resolve valid log directory. Resolve-LogDirectory returned: '$logRoot'"
+    # if only creating one runner log, return that filepath
+    if (-not $IndividualJobLogs) {
+        if ($script:LogFile) {
+            return $script:LogFile
+        } else {
+            throw "Generate-JobLogFilepath: should only create one logfile, but no global `$script:LogFile"
+        }
     }
 
+    # ensure log directory has been established and exists
+    if (-not $script:LogDir -or -not (Test-Path -Path $script:LogDir)) {
+        throw "Generate-JobLogFilepath: `$script:LogDir not set -- can't determine job log directory"
+    }
+
+    # generate a log filename for job
     $filename = Generate-JobLogFilename -JobName $JobName -Suffix $Suffix
-    $fullPath = Join-Path -Path $logRoot -ChildPath $filename
+    $fullPath = Join-Path -Path $script:LogDir -ChildPath $filename
     Write-Host "DEBUG: filepath generated $fullPath"
 
-    # Create directory if requested (-Force prevents error if dir already exists)
-    if ($Create) {
-        New-Item -Path $logRoot -ItemType Directory -Force | Out-Null
+    # Create file if requested and doesn't already exist
+    if ($Create -and -not (Test-Path -Path $fullPath)) {
+        New-Item -Path $fullPath -ItemType File -Force | Out-Null
     }
 
     return $fullPath
@@ -1315,7 +1335,9 @@ function Initialize-JobLog {
         $null { "unknown (detached property not present)" }
     }
 
-    # generate a safe filepath and create parent directory
+    # determine logfile
+    # (if only one logfile per script run, Generate-JobLogFilepath will return $script:LogFile,
+    # else will create a new file)
     $logPath = Generate-JobLogFilepath -JobName $JobName -Suffix $Suffix -Create $true
 
 $header = @"
@@ -1346,7 +1368,8 @@ PowerShell Version: $psVersion
     }
 
     # Write log content to disk
-    $logContent | Out-File -FilePath $logPath -Encoding UTF8
+    # NOTE: Append in case $logPath already exists (else will overwrite)
+    $logContent | Out-File -FilePath $logPath -Encoding UTF8 -Append
 
     Write-OutputWithTimestamp "Log written to: $logPath"
 
