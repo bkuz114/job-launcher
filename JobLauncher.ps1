@@ -1255,9 +1255,9 @@ function Resolve-LogDirectory {
     If $true, creates the log file (with parent dirs) if it does not exist.
     Uses -Force to create parent dirs if they do not yet exist.
 .EXAMPLE
-    $path = Generate-JobLogFilepath -JobName "BackupJob" -Create $true
+    $path = Generate-JobLogFilepath -JobName "BackupJob" -ConfigName "Networking Tasks" -Create $true
 .EXAMPLE
-    $path = Generate-JobLogFilepath -JobName "BackupJob" -Suffix "retry3" -Create $false
+    $path = Generate-JobLogFilepath -JobName "BackupJob" -ConfigName "Daily Driver" -Suffix "retry3" -Create $false
 .NOTES
     Requires Resolve-LogDirectory and Generate-JobLogFilename functions.
     Outputs debug message using Write-Host.
@@ -1323,9 +1323,9 @@ function Generate-JobLogFilepath {
     Optional suffix to add before the .log extension (e.g., "detached").
     If provided, the format becomes: name_timestamp-suffix.log
 .EXAMPLE
-    $logPath = Initialize-JobLog -Job $jobObject -WorkingDirectory "C:\temp" -TimeoutSeconds 300
+    $logPath = Initialize-JobLog -Job $jobObject -ConfigName "Networking Tasks" -WorkingDirectory "C:\temp" -TimeoutSeconds 300
 .EXAMPLE
-    $logPath = Initialize-JobLog -Job $jobObject -WorkingDirectory "C:\temp" -TimeoutSeconds 60 -TerminationReason "Starting"
+    $logPath = Initialize-JobLog -Job $jobObject -ConfigName "Daily Driver" -WorkingDirectory "C:\temp" -TimeoutSeconds 60 -TerminationReason "Starting"
 .NOTES
     Requires Get-JobProperty and Generate-JobLogFilepath functions.
     Uses global variable $LogIncludeEnvironmentInfo if defined.
