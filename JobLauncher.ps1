@@ -1984,7 +1984,7 @@ function Get-JobProcessDetached {
     $logFile = Initialize-JobLog -Job $Job -WorkingDirectory $WorkingDirectory -Suffix "child"
 
     # Append a hint that this is for the detached child process
-    Append-JobLog -Path $logFile -Content "This log is for the child process. stdout and stderr (if any) will be appended below."  -HeaderSummary "Info"
+    Write-Log -LogPath $logFile -Text "This log is for the child process. stdout and stderr (if any) will be appended below."
 
     # Arguments for Windows cmd that will be nested in powershell
     $rawArgs = $Job.command
@@ -2470,7 +2470,7 @@ function Invoke-Job {
         $result.LauncherMessage = $errorMsg
         ## FUTURE SELF:
         #
-        # - I realize that every time you set a LauncherMessage you are manually calling Append-JobLog
+        # - I realize that every time you set a LauncherMessage you are manually calling Write-Log
         # - Resist the urge to remove them all and shift to a singular call in Job-Cleanup
         #   (making it always dispaly $Result.LauncherMessage if it was set).
         # - The current approach:
@@ -2479,7 +2479,7 @@ function Invoke-Job {
         #   3. allows greater granulairty on what appears in logs (you can set LauncherMessage
         #      -- which always appears in status + output area, but not have it show up in the final
         #      log. Not currently being done, but might at some point.)
-        Append-JobLog -Path $Result.logFile -Content $Result.LauncherMessage
+        Write-Log -LogPath $Result.logFile -Text $Result.LauncherMessage
 
         Cleanup-Job -Result $result -Process $process
         return $false
@@ -2505,7 +2505,7 @@ function Invoke-Job {
         Write-Log -LogPath $script:LogFile -Text "Started job [$JobName] with pid $jobPid" -Level "INFO"
 
         # === Append PID to job log ==
-        Append-JobLog -Path $logFile -Content $jobPid -HeaderSummary "Process PID (ignore if detached)"
+        Write-Log -LogPath $logFile -Text "Process PID: $jobPid (ignore if detached)"
         Write-OutputWithTimestamp "Job PID: $jobPid"
 
         # Record running job state
@@ -2552,7 +2552,7 @@ function Invoke-Job {
             $result.IsError = $true
             $result.StatusMessage = "TIMEOUT: $jobName"
             $result.LauncherMessage = "TIMEOUT: Job exceeded $timeoutSeconds seconds"
-            Append-JobLog -Path $Result.logFile -Content $Result.LauncherMessage
+            Write-Log -LogPath $Result.logFile -Text $Result.LauncherMessage
         }
 
         # === Final drain of output queue ===
@@ -2568,12 +2568,12 @@ function Invoke-Job {
             $result.IsError = $false
             $result.StatusMessage = "Success: $jobName"
             $result.LauncherMessage = "Job completed successfully (exit code 0)"
-            Append-JobLog -Path $Result.logFile -Content $Result.LauncherMessage
+            Write-Log -LogPath $Result.logFile -Text $Result.LauncherMessage
         } elseif (-not $result.TimedOut) {
             $result.IsError = $true
             $result.StatusMessage = "Failed: $jobName (exit $($result.ExitCode))"
             $result.LauncherMessage = "Job failed with exit code: $($result.ExitCode)"
-            Append-JobLog -Path $Result.logFile -Content $Result.LauncherMessage
+            Write-Log -LogPath $Result.logFile -Text $Result.LauncherMessage
         }
     }
     catch {
@@ -2594,7 +2594,7 @@ function Invoke-Job {
                 }
             }
 
-            Append-JobLog -Path $Result.logFile -Content $Result.LauncherMessage
+            Write-Log -LogPath $Result.logFile -Text $Result.LauncherMessage
         }
         if ($result.ExitCode -eq $null) {
             $result.ExitCode = -1
@@ -2692,7 +2692,7 @@ function Stop-CurrentJob {
 
         # Write to log file if present
         if ($script:CurrentRunningJob.ContainsKey('LogPath')) {
-            Append-JobLog -Path $logFile -Content "Killed by user at $(Get-ShortTimestamp)"
+            Write-Log -LogPath $logFile -Text "Killed by user at $(Get-ShortTimestamp)"
         }
         # Update termination reason for result in cleanup
         if ($script:CurrentRunningJob.ContainsKey('Result')) {
