@@ -735,7 +735,7 @@ function Load-Configuration {
 .DESCRIPTION
     Appends a formatted log line to the specified file. Each line includes:
     - Timestamp (full date and time) unless -NoTimestamp is used
-    - Log level (DEBUG, INFO, WARN, ERROR, FATAL) unless -NoTimestamp is used
+    - Log level (DEBUG, INFO, WARN, ERROR, FATAL)
     - The message text
 
     Log level filtering: If the message's level is below the global $LogLevel
@@ -754,7 +754,7 @@ function Load-Configuration {
     Severity level. Valid values: DEBUG, INFO, WARN, ERROR, FATAL. Default: INFO.
 
 .PARAMETER NoTimestamp
-    If specified, omits both the timestamp and level tag from the log line.
+    If specified, omits timestamp from the log line.
     Use for raw output or lines where timestamp adds no value.
 
 .EXAMPLE
@@ -799,7 +799,7 @@ function Write-Log {
 
     # Build line
     $timestamp = if ($NoTimestamp) { "" } else { "[$(Get-HumanTimestamp)] " }
-    $levelTag = if ($NoTimestamp) { "" } else { "[$Level] " }
+    $levelTag = "[$Level] "
     $line = $timestamp + $levelTag + $Text
 
     try {
