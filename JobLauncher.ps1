@@ -74,6 +74,16 @@ $script:FallbackTheme = @{
 $script:FallbackThemeName = "default"
 
 # =============================================================================
+# LOG CONFIGURATION
+# =============================================================================
+
+$DefaultLogsDirectory = Join-Path $PSScriptRoot "Logs" # Default logging directory to fall back to if not in JSON
+$RelativeLogPathBaseDirectory = $PSScriptRoot # Base directory for resolving relative log paths. Absolute paths are used as-is.
+$LogRetentionDays = 30
+$LogIncludeEnvironmentInfo = $true
+$LogTimestampEntries = $true
+
+# =============================================================================
 # USER CONFIGURABLE SETTINGS
 # =============================================================================
 
@@ -105,13 +115,6 @@ $EnableRealTimeOutput = $true # real-time output streaming (experimental)
 $KillProcessTree = $true
 $KillTimeoutGraceSeconds = 5
 $TimeoutPollIntervalMs = 1000
-
-# --- Logging ---
-$DefaultLogsDirectory = Join-Path $PSScriptRoot "Logs" # Default logging directory to fall back to if not in JSON
-$RelativeLogPathBaseDirectory = $PSScriptRoot # Base directory for resolving relative log paths. Absolute paths are used as-is.
-$LogRetentionDays = 30
-$LogIncludeEnvironmentInfo = $true
-$LogTimestampEntries = $true
 
 # --- Default Values ---
 $DefaultSettingsPath = Join-Path $PSScriptRoot "launcher_settings.json" # Path to launcher settings
