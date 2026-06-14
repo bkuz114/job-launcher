@@ -93,6 +93,7 @@ $LogLevels = @{
     FATAL = 4
 }
 $LogLevel = "DEBUG" # log level for script (statements at levels beneath this be ignored)
+$script:JobNumber = 0 # keeps track of number of jobs run during script execution; used in logging
 
 # =============================================================================
 # USER CONFIGURABLE SETTINGS
@@ -1096,14 +1097,19 @@ function Initialize-Logging {
 .PARAMETER ConfigName
     The name of the config the job is defined in. Must not be null or empty.
 
+.PARAMETER JobNumber
+    Sequential number indicating the order in which this job was executed
+    within the current script session. The first job run is 1, the second is 2, etc.
+    Used to prefix the log filename for chronological sorting in file explorers.
+
 .PARAMETER Suffix
     Optional suffix to add before the .log extension (e.g., "detached").
     If provided, the format becomes: name_timestamp-suffix.log
 
 .EXAMPLE
-    Generate-JobLogFilename -JobName "My Job" -ConfigName "Daily Driver" -> "Daily_Driver_My_Job_20250101_120000.log"
-    Generate-JobLogFilename -JobName "My Job" -ConfigName "myjobs" -Suffix "detached" -> "myjobs_My_Job_20250101_120000-detached.log"
-    Generate-JobLogFilename -JobName "My Job - (version B)" -ConfigName "Networking: all" -> "Networking_all_My_Job_version_B_20250101_120000.log"
+    Generate-JobLogFilename -JobName "My Job" -ConfigName "Daily Driver" -JobNumber 5 -> "Job-5_Daily_Driver_My_Job_20250101_120000.log"
+    Generate-JobLogFilename -JobName "My Job" -ConfigName "myjobs" -JobNumber 8 -Suffix "detached" -> "Job-8_myjobs_My_Job_20250101_120000-detached.log"
+    Generate-JobLogFilename -JobName "My Job - (version B)" -ConfigName "Networking: all" -JobNumber 13 -> "Job-13_Networking_all_My_Job_version_B_20250101_120000.log"
     Generate-JobLogFilename -JobName "___" -ConfigName "___" -> "20250101_120000.log"
 
 .NOTES
@@ -1115,6 +1121,8 @@ function Generate-JobLogFilename {
         [string]$JobName,
         [Parameter(Mandatory = $true)]
         [string]$ConfigName,
+        [Parameter(Mandatory = $true)]
+        [int]$JobNumber,
         [string]$Suffix = ""
     )
 
@@ -1127,7 +1135,7 @@ function Generate-JobLogFilename {
     }
 
     # filename base is config name + job name
-    $filename = "${ConfigName}_${JobName}"
+    $filename = "Job-${JobNumber}_${ConfigName}_${JobName}"
 
     # Replace any non-alphanumeric character with underscore
     $safeName = $filename -replace '[^a-zA-Z0-9]', '_'
@@ -1249,15 +1257,19 @@ function Resolve-LogDirectory {
     Name of the job used to generate the filename. Mandatory parameter.
 .PARAMETER ConfigName
     Name of the config the job comes from. Mandatory parameter.
+.PARAMETER JobNumber
+    Sequential number indicating the order in which this job was executed
+    within the current script session. The first job run is 1, the second is 2, etc.
+    Used to prefix the log filename for chronological sorting in file explorers.
 .PARAMETER Suffix
     Optional suffix to append to the filename before the extension. Default is empty string.
 .PARAMETER Create
     If $true, creates the log file (with parent dirs) if it does not exist.
     Uses -Force to create parent dirs if they do not yet exist.
 .EXAMPLE
-    $path = Generate-JobLogFilepath -JobName "BackupJob" -ConfigName "Networking Tasks" -Create $true
+    $path = Generate-JobLogFilepath -JobName "BackupJob" -ConfigName "Networking Tasks" -JobNumber 5 -Create $true
 .EXAMPLE
-    $path = Generate-JobLogFilepath -JobName "BackupJob" -ConfigName "Daily Driver" -Suffix "retry3" -Create $false
+    $path = Generate-JobLogFilepath -JobName "BackupJob" -ConfigName "Daily Driver" -JobNumber 8 -Suffix "retry3" -Create $false
 .NOTES
     Requires Resolve-LogDirectory and Generate-JobLogFilename functions.
     Outputs debug message using Write-Host.
@@ -1269,6 +1281,8 @@ function Generate-JobLogFilepath {
         [string]$JobName,
         [Parameter(Mandatory = $true)]
         [string]$ConfigName,
+        [Parameter(Mandatory = $true)]
+        [int]$JobNumber,
         [string]$Suffix = "",
         [boolean]$Create = $false
     )
@@ -1288,7 +1302,7 @@ function Generate-JobLogFilepath {
     }
 
     # generate a log filename for job
-    $filename = Generate-JobLogFilename -JobName $JobName -ConfigName $ConfigName -Suffix $Suffix
+    $filename = Generate-JobLogFilename -JobName $JobName -ConfigName $ConfigName -JobNumber $JobNumber -Suffix $Suffix
     $fullPath = Join-Path -Path $script:LogDir -ChildPath $filename
     Write-Host "DEBUG: filepath generated $fullPath"
 
@@ -1315,6 +1329,10 @@ function Generate-JobLogFilepath {
     .detached, .timeout_seconds, and .working_directory.
 .PARAMETER ConfigName
     The name of the config the job is from.
+.PARAMETER JobNumber
+    Sequential number indicating the order in which this job was executed
+    within the current script session. The first job run is 1, the second is 2, etc.
+    Used to prefix the log filename for chronological sorting in file explorers.
 .PARAMETER WorkingDirectory
     The working directory where the job will execute.
 .PARAMETER TimeoutSeconds
@@ -1323,9 +1341,9 @@ function Generate-JobLogFilepath {
     Optional suffix to add before the .log extension (e.g., "detached").
     If provided, the format becomes: name_timestamp-suffix.log
 .EXAMPLE
-    $logPath = Initialize-JobLog -Job $jobObject -ConfigName "Networking Tasks" -WorkingDirectory "C:\temp" -TimeoutSeconds 300
+    $logPath = Initialize-JobLog -Job $jobObject -ConfigName "Networking Tasks" -JobNumber 5 -WorkingDirectory "C:\temp" -TimeoutSeconds 300
 .EXAMPLE
-    $logPath = Initialize-JobLog -Job $jobObject -ConfigName "Daily Driver" -WorkingDirectory "C:\temp" -TimeoutSeconds 60 -TerminationReason "Starting"
+    $logPath = Initialize-JobLog -Job $jobObject -ConfigName "Daily Driver" -JobNumber 8 -WorkingDirectory "C:\temp" -TimeoutSeconds 60 -TerminationReason "Starting"
 .NOTES
     Requires Get-JobProperty and Generate-JobLogFilepath functions.
     Uses global variable $LogIncludeEnvironmentInfo if defined.
@@ -1337,6 +1355,8 @@ function Initialize-JobLog {
         [PSObject]$Job,
         [Parameter(Mandatory = $true)]
         [string]$ConfigName,
+        [Parameter(Mandatory = $true)]
+        [int]$JobNumber,
         [string]$WorkingDirectory,
         [int]$TimeoutSeconds,
         [string]$Suffix = ""
@@ -1357,7 +1377,7 @@ function Initialize-JobLog {
     # determine logfile
     # (if only one logfile per script run, Generate-JobLogFilepath will return $script:LogFile,
     # else will create a new file)
-    $logPath = Generate-JobLogFilepath -JobName $JobName -ConfigName $ConfigName -Suffix $Suffix -Create $true
+    $logPath = Generate-JobLogFilepath -JobName $JobName -ConfigName $ConfigName -JobNumber $JobNumber -Suffix $Suffix -Create $true
 
 $header = @"
 ================================================================================
@@ -1911,7 +1931,7 @@ function Get-JobProcessDetached {
     )
 
     # Create a separate log file to pipe content to
-    $logFile = Initialize-JobLog -Job $Job -ConfigName $script:CurrentConfigName -WorkingDirectory $WorkingDirectory -Suffix "child"
+    $logFile = Initialize-JobLog -Job $Job -ConfigName $script:CurrentConfigName -JobNumber $script:JobNumber -WorkingDirectory $WorkingDirectory -Suffix "child"
 
     # Append a hint that this is for the detached child process
     Write-Log -LogPath $logFile -Text "This log is for the child process. stdout and stderr (if any) will be appended below."
@@ -2344,9 +2364,13 @@ function Invoke-Job {
 
     $workingDir = Get-JobWorkingDirectory -JobItem $JobItem
 
+    # === Increase job number for logging ===
+
+    $script:JobNumber++
+
     # === Initialize logfile with job header ==
 
-    $logFile = Initialize-JobLog -Job $rawJob -ConfigName $script:CurrentConfigName -WorkingDirectory $workingDir -TimeoutSeconds $TimeoutSeconds
+    $logFile = Initialize-JobLog -Job $rawJob -ConfigName $script:CurrentConfigName -JobNumber $script:JobNumber -WorkingDirectory $workingDir -TimeoutSeconds $TimeoutSeconds
 
     # === Initialize result object ===
 
