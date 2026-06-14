@@ -80,7 +80,6 @@ $script:FallbackThemeName = "default"
 $IndividualJobLogs = $true # If true, creates individual logfiles for every job run (in addition to main runner log)
 $DefaultLogsDirectory = Join-Path $PSScriptRoot "Logs" # Default logging directory to fall back to if not in JSON
 $RelativeLogPathBaseDirectory = $PSScriptRoot # Base directory for resolving relative log paths. Absolute paths are used as-is.
-$LogRetentionDays = 30
 $LogIncludeEnvironmentInfo = $true
 $LogTimestampEntries = $true # adds timestamp to log entries
 $script:LogDir = $null # parent dir for any logs this script runs
