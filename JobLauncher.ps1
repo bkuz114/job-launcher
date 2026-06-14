@@ -82,6 +82,17 @@ $RelativeLogPathBaseDirectory = $PSScriptRoot # Base directory for resolving rel
 $LogRetentionDays = 30
 $LogIncludeEnvironmentInfo = $true
 $LogTimestampEntries = $true
+$script:LogDir = $null # parent dir for any logs this script runs
+$script:LogFile = $null # the main runner logfile
+# valid log levels
+$LogLevels = @{
+    DEBUG = 0
+    INFO  = 1
+    WARN  = 2
+    ERROR = 3
+    FATAL = 4
+}
+$LogLevel = "DEBUG" # log level for script (statements at levels beneath this be ignored)
 
 # =============================================================================
 # USER CONFIGURABLE SETTINGS
@@ -718,6 +729,87 @@ function Load-Configuration {
 
 <#
 .SYNOPSIS
+    Writes a timestamped, level-filtered message to a log file.
+
+.DESCRIPTION
+    Appends a formatted log line to the specified file. Each line includes:
+    - Timestamp (full date and time) unless -NoTimestamp is used
+    - Log level (DEBUG, INFO, WARN, ERROR, FATAL) unless -NoTimestamp is used
+    - The message text
+
+    Log level filtering: If the message's level is below the global $LogLevel
+    threshold, the message is silently discarded.
+
+    On any write failure (permissions, disk full, missing file), the function
+    throws a terminating exception with a clear error message.
+
+.PARAMETER LogPath
+    Full path to the log file. Must already exist.
+
+.PARAMETER Text
+    The message text to write.
+
+.PARAMETER Level
+    Severity level. Valid values: DEBUG, INFO, WARN, ERROR, FATAL. Default: INFO.
+
+.PARAMETER NoTimestamp
+    If specified, omits both the timestamp and level tag from the log line.
+    Use for raw output or lines where timestamp adds no value.
+
+.EXAMPLE
+    Write-Log -LogPath $sessionLog -Text "Job started" -Level INFO
+
+.EXAMPLE
+    Write-Log -LogPath $jobLog -Text "Raw command output" -NoTimestamp
+
+.NOTES
+    Requires global $LogLevels (hashtable) and $LogLevel (threshold string).
+    Throws terminating exception if LogPath does not exist or write fails.
+#>
+function Write-Log {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$LogPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Text,
+
+        [Parameter(Mandatory = $false)]
+        [string]$Level = "INFO",
+
+        [Parameter(Mandatory = $false)]
+        [switch]$NoTimestamp
+    )
+
+    if (-not (Test-Path -Path $LogPath)) {
+        throw "Write-Log: Log file not found: $LogPath"
+    }
+
+    # Validate log level is valid
+    if ($Level -notin $LogLevels.Keys) {
+        Write-Error "Invalid log level '$Level'. Valid: $($LogLevels.Keys -join ', ')"
+        return
+    }
+
+    # Filter by threshold
+    if ($LogLevels[$Level] -lt $LogLevels[$LogLevel]) {
+        return
+    }
+
+    # Build line
+    $timestamp = if ($NoTimestamp) { "" } else { "[$(Get-HumanTimestamp)] " }
+    $levelTag = if ($NoTimestamp) { "" } else { "[$Level] " }
+    $line = $timestamp + $levelTag + $Text
+
+    try {
+        $line | Out-File -FilePath $LogPath -Encoding UTF8 -Append -ErrorAction Stop
+    } catch {
+        throw "Write-Log: Failed to write to '$LogPath' - $($_.Exception.Message)"
+    }
+}
+
+<#
+.SYNOPSIS
     Returns a human-readable timestamp for log entries and console output.
 
 .DESCRIPTION
@@ -845,6 +937,139 @@ function Get-PathSafeTimestamp {
 #>
 function Get-ShortTimestamp {
     return (Get-Date -Format 'HH:mm:ss')
+}
+
+<#
+.SYNOPSIS
+    Generates a unique filename for the main session log.
+
+.DESCRIPTION
+    Creates a filename in the format "runner_<timestamp>.log" where timestamp
+    is a path-safe string (yyyyMMdd_HHmmss) from Get-PathSafeTimestamp.
+
+    Example output: runner_20260614_073057.log
+
+.EXAMPLE
+    $filename = Generate-LogFilename
+
+.NOTES
+    Used exclusively by Initialize-Logging to name the main session log file.
+#>
+function Generate-LogFilename {
+    $timestamp = Get-PathSafeTimestamp
+    return "runner_$timestamp.log"
+}
+
+<#
+.SYNOPSIS
+    Writes the header and environment information to a new session log file.
+
+.DESCRIPTION
+    Creates a new log file at the specified path with a formatted header containing
+    the script start time. If $LogIncludeEnvironmentInfo is $true, also includes
+    OS version and PowerShell version information before the header.
+
+    This function is called once per script execution by Initialize-Logging.
+
+.PARAMETER LogPath
+    Full path to the session log file to create. Parent directory must exist.
+
+.EXAMPLE
+    Initialize-ScriptLog -LogPath "C:\Logs\runner_20260614_073057.log"
+
+.NOTES
+    This function overwrites any existing file at LogPath. It does not append.
+    Environment info placement (before the header) is intentional.
+#>
+function Initialize-ScriptLog {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$LogPath
+    )
+
+    # to hold log content
+    $logContent = ""
+
+$header = @"
+================================================================================
+SCRIPT RUN LOG
+================================================================================
+Start Time:        $(Get-HumanTimestamp)
+================================================================================
+
+"@
+
+    $logContent += $header
+
+    # Add environment info if configured globally
+    if ($LogIncludeEnvironmentInfo) {
+        $osVersion = (Get-WmiObject -Class Win32_OperatingSystem).Caption
+        $psVersion = $PSVersionTable.PSVersion.ToString()
+        $envInfo = @"
+OS Version:        $osVersion
+PowerShell Version: $psVersion
+"@
+        $logContent = $envInfo + "`r`n" + $logContent
+    }
+
+    # Write log content to disk
+    $logContent | Out-File -FilePath $LogPath -Encoding UTF8
+}
+
+<#
+.SYNOPSIS
+    Sets up the complete logging environment for a script session.
+
+.DESCRIPTION
+    Performs all logging initialization steps:
+    1. Determines the base log directory via Resolve-LogDirectory
+    2. Generates a unique filename for the session log
+    3. Ensures the directory exists (via New-Item -Force)
+    4. Sets global $script:LogFile and $script:LogDir
+    5. Initializes the session log file with header and environment info
+    6. Returns the full path to the session log file
+
+    Call this once at script startup, after loading configuration.
+
+.PARAMETER None
+
+.EXAMPLE
+    Initialize-Logging
+    Write-Log -LogPath $script:LogFile -Text "Session started"
+
+.NOTES
+    - Uses $LogIncludeEnvironmentInfo, and $LogLevels globally.
+    - Must be called **AFTER** Load-LauncherSettings (else Resolve-LogDirectory won't
+      have access to user logging configurations in launcher_settings.json 
+    - Sets script-scope globals as a side effect (intentional design decision: otherwise
+      caller will need to set both $script:LogFile and $script:LogDir, and will either
+      need to return both from here via a custom object, or return only logfile and caller
+      would need to guess the main logging dir based on that; fragile, in the case that
+      logging dir structure changes.)
+#>
+function Initialize-Logging {
+
+    # === Determine parent logging directory ===
+
+    $logrunDir = Resolve-LogDirectory
+
+    # === Get safe name for main log runner ===
+
+    $logrunFilename = Generate-LogFilename
+    $logrunFile = Join-Path -Path $logrunDir -ChildPath $logrunFilename
+
+    # === Create file with parent dirs if needed ===
+
+    New-Item -ItemType File -Path $logrunFile -Force | Out-Null
+
+    # === Set globals ===
+
+    $script:LogFile = $logrunFile
+    $script:LogDir = $logrunDir
+
+    # === Initialize the log runner file ===
+
+    Initialize-ScriptLog -LogPath $logrunFile
 }
 
 <#
@@ -2254,6 +2479,7 @@ function Invoke-Job {
 
         # job pid
         $jobPid = $process.Id
+        Write-Log -LogPath $script:LogFile -Text "Started job [$JobName] with pid $jobPid" -Level "INFO"
 
         # === Append PID to job log ==
         Append-JobLog -Path $logFile -Content $jobPid -HeaderSummary "Process PID (ignore if detached)"
@@ -4894,6 +5120,19 @@ function Main {
     # === Read and set launcher settings JSON ==
 
     $script:LauncherSettings = Load-LauncherSettings -ConfigPath $DefaultSettingsPath
+
+    # === Initialize Logging ==
+    # ** Must do AFTER Load-LauncherSettings or can't
+    # ** obtain user-defined logging configuration
+
+    Initialize-Logging
+
+    # ensure global logFile set -- Initialize-Logging should do this
+    if (-not $script:LogFile) {
+        throw "Main: Initialize-Logging failed to set `$script:LogFile. Check disk permissions and log directory configuration in launcher_settings.json."
+    }
+    Write-Host "DEBUG: Script running log: $script:LogFile"
+    Write-Log -LogPath $script:LogFile -Text "Main script runner initialized..." -Level "DEBUG"
 
     # === Determine dir for discovering config files ==
 
