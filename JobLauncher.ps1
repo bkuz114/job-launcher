@@ -715,6 +715,137 @@ function Load-Configuration {
 
 <#
 .SYNOPSIS
+    Returns a human-readable timestamp for log entries and console output.
+
+.DESCRIPTION
+    Generates a timestamp formatted as 'yyyy-MM-dd HH:mm:ss' (e.g., "2026-01-13 14:35:22").
+    Designed for log file entries, console messages, and any output intended for human
+    reading. The format is sortable (year-month-day) and includes both date and time.
+
+    This format is NOT safe for file or directory names because it contains spaces
+    and colon characters. Use Get-PathSafeTimestamp for naming files or folders.
+
+.EXAMPLE
+    $timestamp = Get-HumanTimestamp
+    Write-Log -LogPath $logFile -Text "[$timestamp] Application started"
+
+    Produces a log line like: "[2026-01-13 14:35:22] Application started"
+
+.EXAMPLE
+    Write-Host "$(Get-HumanTimestamp) - Config loaded successfully"
+
+    Outputs: "2026-01-13 14:35:22 - Config loaded successfully"
+
+.NOTES
+    Format components:
+        yyyy = 4-digit year
+        MM   = 2-digit month (01-12)
+        dd   = 2-digit day (01-31)
+        HH   = 2-digit hour (00-23, 24-hour clock)
+        mm   = 2-digit minute (00-59)
+        ss   = 2-digit second (00-59)
+
+    For path-safe timestamps (no spaces or colons), see Get-PathSafeTimestamp.
+#>
+function Get-HumanTimestamp {
+    return (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+}
+
+<#
+.SYNOPSIS
+    Returns a path-safe timestamp for use in file and directory names.
+
+.DESCRIPTION
+    Generates a timestamp formatted as 'yyyyMMdd_HHmmss' (e.g., "20260113_143522").
+    Designed specifically for naming log files, directories, or any filesystem object
+    where spaces, colons, or other special characters would be problematic or
+    require escaping.
+
+    This format is NOT human-friendly for reading at a glance. Use Get-HumanTimestamp
+    for log entries and console output.
+
+.EXAMPLE
+    $filename = "runner_$(Get-PathSafeTimestamp).log"
+    # Results in: runner_20260113_143522.log
+
+.EXAMPLE
+    $sessionDir = Join-Path $logRoot (Get-PathSafeTimestamp)
+    New-Item -Path $sessionDir -ItemType Directory -Force
+
+    Creates a directory like: C:\Logs\20260113_143522\
+
+.NOTES
+    Format components:
+        yyyy   = 4-digit year
+        MM     = 2-digit month (01-12)
+        dd     = 2-digit day (01-31)
+        HH     = 2-digit hour (00-23, 24-hour clock)
+        mm     = 2-digit minute (00-59)
+        ss     = 2-digit second (00-59)
+
+    This format is safe for all common filesystems (NTFS, FAT32, ext4, etc.)
+    because it contains no spaces, colons, backslashes, forward slashes, or
+    other reserved characters.
+
+    For human-readable timestamps (with spaces and colons), see Get-HumanTimestamp.
+#>
+function Get-PathSafeTimestamp {
+    return (Get-Date -Format 'yyyyMMdd_HHmmss')
+}
+
+<#
+.SYNOPSIS
+    Returns a compact, time-only timestamp for high-frequency logging.
+
+.DESCRIPTION
+    Generates a timestamp formatted as 'HH:mm:ss' (e.g., "14:35:22").
+    Designed for log entries where the date is already established elsewhere
+    (e.g., in a session log header) and only the time is needed for intra-day
+    sequencing.
+
+    This format is ideal for:
+    - Per-line timestamps in a daily log file where the date is in the filename or header
+    - Real-time console output where date context is already visible
+    - Reducing log verbosity while maintaining chronological ordering within a session
+
+    This format is NOT safe for file or directory names (contains colons). Do not use
+    for naming filesystem objects.
+
+.EXAMPLE
+    # Inside a daily log file where the date appears only in the header
+    $logEntry = "$(Get-ShortTimestamp) [INFO] Job started"
+    # Produces: "14:35:22 [INFO] Job started"
+
+.EXAMPLE
+    # Real-time status updates in console
+    Write-Host "$(Get-ShortTimestamp) Processing batch 5 of 20"
+
+.EXAMPLE
+    # Combined with date from session context
+    Write-Log -LogPath $sessionLog -Text "$(Get-ShortTimestamp) Config reloaded"
+
+.NOTES
+    Format components:
+        HH = 2-digit hour (00-23, 24-hour clock)
+        mm = 2-digit minute (00-59)
+        ss = 2-digit second (00-59)
+
+    Unlike Get-HumanTimestamp, this omits the date. Unlike Get-PathSafeTimestamp,
+    this includes colons and is not filesystem-safe.
+
+    Recommended use pattern:
+        Session header: Get-HumanTimestamp (once per session log)
+        Line entries:   Get-ShortTimestamp (every log line)
+
+    For full human-readable timestamps (date + time), use Get-HumanTimestamp.
+    For filesystem-safe timestamps (no spaces or colons), use Get-PathSafeTimestamp.
+#>
+function Get-ShortTimestamp {
+    return (Get-Date -Format 'HH:mm:ss')
+}
+
+<#
+.SYNOPSIS
     Generates a unique log filename for a job based on its name and current timestamp.
 
 .DESCRIPTION
@@ -758,7 +889,7 @@ function Generate-JobLogFilename {
     # Trim _ chars
     $safeName = $safeName.Trim('_')
 
-    $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+    $timestamp = Get-PathSafeTimestamp
 
     # Handle edge case where safeName is empty after trimming
     if ([string]::IsNullOrEmpty($safeName)) {
@@ -964,7 +1095,7 @@ $header = @"
 JOB LOG
 ================================================================================
 Job Name:          $jobName
-Start Time:        $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+Start Time:        $(Get-HumanTimestamp)
 Command Line:      $jobCommand
 Working Directory: $WorkingDirectory
 Timeout (seconds): $TimeoutSeconds
@@ -1017,7 +1148,7 @@ function Generate-JobLogHeaderLine {
         [string]$Summary = ""
     )
 
-    $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    $timestamp = Get-HumanTimestamp
 
     if ([string]::IsNullOrWhiteSpace($Summary)) {
         return "--- [$timestamp] ---"
@@ -1126,7 +1257,7 @@ function Finalize-JobLog {
 $footer = @"
 
 ================================================================================
-Stop Time:         $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+Stop Time:         $(Get-HumanTimestamp)
 ================================================================================
 Exit Code:         $ExitCode
 Exit Reason:       $TerminationReason
@@ -1169,7 +1300,7 @@ END OF LOG
 function Write-OutputWithTimestamp {
     param([string]$Text, [bool]$IsError = $false)
 
-    $timestamp = if ($ShowTimestampsInOutput) { "[$(Get-Date -Format 'HH:mm:ss')] " } else { "" }
+    $timestamp = if ($ShowTimestampsInOutput) { "[$(Get-ShortTimestamp)] " } else { "" }
     $prefix = if ($IsError) { "ERROR: " } else { "" }
     $line = $timestamp + $prefix + $Text
 
@@ -2309,7 +2440,7 @@ function Stop-CurrentJob {
 
         # Write to log file if present
         if ($script:CurrentRunningJob.ContainsKey('LogPath')) {
-            Append-JobLog -Path $logFile -Content "Killed by user at $(Get-Date -Format 'HH:mm:ss')"
+            Append-JobLog -Path $logFile -Content "Killed by user at $(Get-ShortTimestamp)"
         }
         # Update termination reason for result in cleanup
         if ($script:CurrentRunningJob.ContainsKey('Result')) {
