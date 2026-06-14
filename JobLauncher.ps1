@@ -1384,6 +1384,8 @@ $header = @"
 JOB LOG
 ================================================================================
 Job Name:          $jobName
+Config Name:       $ConfigName
+Job Execution #:   $JobNumber
 Start Time:        $(Get-HumanTimestamp)
 Command Line:      $jobCommand
 Working Directory: $WorkingDirectory
