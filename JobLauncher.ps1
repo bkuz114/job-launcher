@@ -3349,7 +3349,7 @@ function Measure-TreeViewMaxWidth {
     }
 
     # account for tree structure to left of text starting
-    return $maxWidth + 15
+    return $maxWidth + 35
 }
 
 <#
@@ -3505,7 +3505,7 @@ function Populate-TreeView {
     # Auto-size left panel width
     $maxWidth = Measure-TreeViewMaxWidth -TreeView $treeView
     if ($script:FormControls.SplitContainer) {
-        $script:FormControls.SplitContainer.SplitterDistance = $maxWidth + 20
+        $script:FormControls.SplitContainer.SplitterDistance = $maxWidth
     }
 
     # Selection event
