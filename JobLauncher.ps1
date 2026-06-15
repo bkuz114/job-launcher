@@ -326,13 +326,13 @@ function Discover-JobConfigs {
                     NavigationItems = $items
                     HasCategories = $hasCategories
                 }
-                Write-Host "DEBUG: Loaded config '$configName' from $($file.Name)"
+                Write-Log -LogPath $script:LogFile -Text "Loaded config '$configName' from $($file.Name)" -Level "DEBUG"
             } else {
                 throw "Discover-JobConfigs: result from Load-Configuration was null"
             }
         }
         catch {
-            Write-Host "WARNING: Failed to load $($file.Name): $($_.Exception.Message)"
+            Write-Log -LogPath $script:LogFile -Text "Failed to load $($file.Name): $($_.Exception.Message)" -Level "WARN"
         }
     }
 
@@ -464,10 +464,10 @@ function Get-DefaultConfig {
         if ($matchingKey) {
             return $matchingKey
         } else {
-            Write-Host "WARNING: 'default_config' from launcher settings ('$defaultConfig') not found in available configs. Using first config alphabetically."
+            Write-Log -LogPath $script:LogFile -Text "'default_config' from launcher settings ('$defaultConfig') not found in available configs. Using first config alphabetically." -Level "WARN"
         }
     } else {
-        Write-Host "DEBUG: No 'default_config' field specified in launcher settings. Using first config alphabetically."
+        Write-Log -LogPath $script:LogFile -Text "No 'default_config' field specified in launcher settings. Using first config alphabetically." -Level "DEBUG"
     }
 
     # return first config found, alphabetically.
@@ -1086,6 +1086,7 @@ function Initialize-Logging {
     # === Initialize the log runner file ===
 
     Initialize-ScriptLog -LogPath $logrunFile
+    Write-Log -LogPath $script:LogFile -Text "Log initialized at $script:LogFile with dir determined as = $script:LogDir" -Level "DEBUG"
 }
 
 <#
@@ -1231,7 +1232,7 @@ function Resolve-LogDirectory {
             break
         } catch {
             $lastError = $_
-            Write-Host "DEBUG: Error trying to create logdir! Will proceed to next candidate. Errored dir: $candidate"
+            Write-Log -LogPath $script:LogFile -Text "Error trying to create logdir! Will proceed to next candidate. Errored dir: $candidate" -Level "DEBUG"
             Write-OutputWithTimestamp "Warning: Cannot use '$candidate' - $($_.Exception.Message)" -IsError $true
             # Continue to next candidate
             continue
@@ -1247,7 +1248,6 @@ function Resolve-LogDirectory {
         throw $errorMsg
     }
 
-    Write-Host "DEBUG: Log dir determined as = $logRoot"
     return $logRoot
 }
 
@@ -1278,7 +1278,6 @@ function Resolve-LogDirectory {
     $path = Generate-JobLogFilepath -JobName "BackupJob" -ConfigName "Daily Driver" -JobNumber 8 -Suffix "retry3" -Create $false
 .NOTES
     Requires Resolve-LogDirectory and Generate-JobLogFilename functions.
-    Outputs debug message using Write-Host.
     Throws terminating error if Resolve-LogDirectory returns invalid path.
 #>
 function Generate-JobLogFilepath {
@@ -1310,7 +1309,7 @@ function Generate-JobLogFilepath {
     # generate a log filename for job
     $filename = Generate-JobLogFilename -JobName $JobName -ConfigName $ConfigName -JobNumber $JobNumber -Suffix $Suffix
     $fullPath = Join-Path -Path $script:LogDir -ChildPath $filename
-    Write-Host "DEBUG: filepath generated $fullPath"
+    Write-Log -LogPath $script:LogFile -Text "filepath generated $fullPath" -Level "DEBUG"
 
     # Create file if requested and doesn't already exist
     if ($Create -and -not (Test-Path -Path $fullPath)) {
@@ -1947,11 +1946,11 @@ function Get-JobProcessDetached {
     # Arguments for Windows cmd that will be nested in powershell
     $rawArgs = $Job.command
     $cmdArgs = "$rawArgs >> `"`"`"$logFile`"`"`" 2>&1"
-    Write-Host "DEBUG: (Detached job) Arg$cmdArgs"
+    Write-Log -LogPath $script:LogFile -Text "(Detached job) Arg$cmdArgs" -Level "DEBUG"
 
     # Arguments to send to powershell.exe
     $powerShellArguments = "-Command Start-Process cmd -ArgumentList '/c $cmdArgs' -WindowStyle Hidden"
-    Write-Host "DEBUG: (Detached job) Arguments for powershell.exe: $powerShellArguments"
+    Write-Log -LogPath $script:LogFile -Text "(Detached job) Arguments for powershell.exe: $powerShellArguments" -Level "DEBUG"
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = "powershell.exe"
@@ -2700,7 +2699,7 @@ function Load-Themes {
 
     # Check if themes.json exists
     if (-not (Test-Path -Path $ThemesFile)) {
-        Write-Host "No themes.json found at $ThemesFile. Using built-in default theme."
+        Write-Log -LogPath $script:LogFile -Text "No themes.json found at $ThemesFile. Using built-in default theme."
         return
     }
 
@@ -2714,11 +2713,11 @@ function Load-Themes {
                 $themeData[$_.Name] = $_.Value
             }
             $script:Themes[$themeName.Name] = $themeData
-            Write-Host "Loaded theme: $($themeName.Name)"
+            Write-Log -LogPath $script:LogFile -Text "Loaded theme: $($themeName.Name)" -Level "DEBUG"
         }
     }
     catch {
-        Write-Host "Warning: Failed to load themes.json - $($_.Exception.Message)"
+        Write-Log -LogPath $script:LogFile -Text "Failed to load themes.json - $($_.Exception.Message)" -Level "WARN"
     }
 }
 
@@ -3215,7 +3214,7 @@ function Update-ButtonsForGroup {
             $buttonRef = $this
 
             # Disable all job buttons immediately
-            Write-Host "DEBUG: button click handler: About to disable job buttons (kill button should enable)"
+            Write-Log -LogPath $script:LogFile -Text "button click handler: About to disable job buttons (kill button should enable)" -Level "DEBUG"
             Update-ButtonStates -Running $true
 
             if ($UI_ClearOutputBeforeEachJob) {
@@ -3237,7 +3236,7 @@ function Update-ButtonsForGroup {
             }
 
             # Re-enable all job buttons
-            Write-Host "DEBUG: button click handler: About to re-enable job buttons (kill button should disable)"
+            Write-Log -LogPath $script:LogFile -Text "button click handler: About to re-enable job buttons (kill button should disable)" -Level "DEBUG"
             Update-ButtonStates -Running $false
             Update-Status "Ready" $UI_Color_Background
         })
@@ -3708,7 +3707,7 @@ function Initialize-TreeViewItem {
         $Tree.SelectedNode = $nodeToSelect
         Set-Item -Item $nodeToSelect.Tag
     } else {
-        Write-Host "DEBUG: Could not determine TreeView node to intiailize"
+        Write-Log -LogPath $script:LogFile -Text "Could not determine TreeView node to intiailize" -Level "DEBUG"
     }
 }
 
@@ -3757,7 +3756,7 @@ function Initialize-ListBoxItem {
         $List.SelectedIndex = $matchingIndex
         Set-Item -Item $List.Items[$matchingIndex]
     } else {
-        Write-Host "DEBUG: Could not determine ListBox node to intiailize"
+        Write-Log -LogPath $script:LogFile -Text "Could not determine ListBox node to intiailize" -Level "DEBUG"
     }
 }
 
@@ -3809,7 +3808,7 @@ function Initialize-CategoryTreeView {
 #> 
 function Update-ButtonStates {
     param([bool]$Running)
-    Write-Host "DEBUG: Update-ButtonStates $Running"
+    Write-Log -LogPath $script:LogFile -Text "Update-ButtonStates $Running" -Level "DEBUG"
 
     $UI_Color_Button = Get-ThemeColor -PropertyName "button"
     $UI_Color_ButtonRunning = Get-ThemeColor -PropertyName "button_running"
@@ -4241,7 +4240,7 @@ function Initialize-Toolbar {
         $logoBox.SizeMode = "Zoom"
         $logoBox.Image = [System.Drawing.Image]::FromFile($AppBranding)
     } else {
-        Write-Host "WARNING: App branding image not found at $AppBranding"
+        Write-Log -LogPath $script:LogFile -Text "App branding image not found at $AppBranding" -Level "WARN"
     }
     $logoBox.Margin = New-Object System.Windows.Forms.Padding(8, 5, 8, 5)
     $logoBox.Anchor = "Left"
@@ -4475,7 +4474,7 @@ function Build-GUI {
     if (Test-Path $AppIcon) {
         $form.Icon = New-Object System.Drawing.Icon($AppIcon)
     } else {
-        Write-Host "WARNING: App icon not found at $AppIcon"
+        Write-Log -LogPath $script:LogFile -Text "App icon not found at $AppIcon" -Level "WARN"
     }
 
     # =========================================================================
@@ -5116,8 +5115,7 @@ function Main {
     if (-not $script:LogFile) {
         throw "Main: Initialize-Logging failed to set `$script:LogFile. Check disk permissions and log directory configuration in launcher_settings.json."
     }
-    Write-Host "DEBUG: Script running log: $script:LogFile"
-    Write-Log -LogPath $script:LogFile -Text "Main script runner initialized..." -Level "DEBUG"
+    Write-Log -LogPath $script:LogFile -Text "Script running log: $script:LogFile" -Level "DEBUG"
 
     # === Determine dir for discovering config files ==
 
@@ -5147,33 +5145,33 @@ function Main {
     # === Determine default config ==
 
     $defaultConfig = Get-DefaultConfig
-    Write-Host "DEBUG: Default job config: '$defaultConfig'"
+    Write-Log -LogPath $script:LogFile -Text "Default job config: '$defaultConfig'" -Level "DEBUG"
 
     # Load themes from themes.json (or use built-in default)
     Load-Themes
 
-    Write-Host "DEBUG: About to call Build-GUI"
+    Write-Log -LogPath $script:LogFile -Text "About to call Build-GUI" -Level "DEBUG"
 
     # Build GUI - this returns a hashtable with Form, ListBox, ButtonPanel
     $script:FormControls = Build-GUI
 
     # Verify we got valid controls
     if ($script:FormControls -isnot [hashtable]) {
-        Write-Host "ERROR: Build-GUI did not return a hashtable. Got: $($script:FormControls.GetType().FullName)"
+        Write-Log -LogPath $script:LogFile -Text "Build-GUI did not return a hashtable. Got: $($script:FormControls.GetType().FullName)" -Level "FATAL"
         exit 1
     }
 
     if (-not $script:FormControls.ContainsKey('Form')) {
-        Write-Host "ERROR: Returned hashtable missing 'Form' key"
+        Write-Log -LogPath $script:LogFile -Text "Returned hashtable missing 'Form' key" -Level "FATAL"
         exit 1
     }
 
-    Write-Host "DEBUG: GUI built successfully, about to populate"
+    Write-Log -LogPath $script:LogFile -Text "GUI built successfully, about to populate" -Level "DEBUG"
 
     # Apply the default config (this also populates the left panel)
     Apply-JobConfig -ConfigName $defaultConfig
 
-    Write-Host "DEBUG: GUI built, setting up close handler"
+    Write-Log -LogPath $script:LogFile -Text "GUI built, setting up close handler" -Level "DEBUG"
 
     # Handle form closing event to kill running job if needed
     $script:FormControls.Form.Add_FormClosing({
@@ -5207,12 +5205,12 @@ function Main {
         }
     })
 
-    Write-Host "DEBUG: Starting form dialog"
+    Write-Log -LogPath $script:LogFile -Text "Starting form dialog" -Level "DEBUG"
 
     # Show the form
     $script:FormControls.Form.ShowDialog() | Out-Null
 
-    Write-Host "DEBUG: Form closed"
+    Write-Log -LogPath $script:LogFile -Text "Form closed" -Level "DEBUG"
 }
 
 # Only run GUI if script is executed directly, not when dot-sourced
