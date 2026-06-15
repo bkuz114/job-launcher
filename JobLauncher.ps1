@@ -82,6 +82,7 @@ $DefaultLogsDirectory = Join-Path $PSScriptRoot "Logs" # Default logging directo
 $RelativeLogPathBaseDirectory = $PSScriptRoot # Base directory for resolving relative log paths. Absolute paths are used as-is.
 $LogIncludeEnvironmentInfo = $true # adds PowerShell and Windows environment info" for capitalization consistency and clarity.
 $LogTimestampEntries = $true # adds timestamp to log entries
+$WriteLogToConsole = $true # If true, all Write-Log calls will also write to PowerShell console via Write-Host
 $script:LogDir = $null # parent dir for any logs this script runs
 $script:LogFile = $null # the main runner logfile
 # valid log levels
@@ -806,6 +807,11 @@ function Write-Log {
         $line | Out-File -FilePath $LogPath -Encoding UTF8 -Append -ErrorAction Stop
     } catch {
         throw "Write-Log: Failed to write to '$LogPath' - $($_.Exception.Message)"
+    }
+
+    # Conditionally write to console
+    if ($WriteLogToConsole) {
+        Write-Host $line
     }
 }
 
