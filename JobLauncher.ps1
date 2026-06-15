@@ -4640,8 +4640,10 @@ function Populate-LeftPanel {
     # == (button for toggling list, tree mode) == #
 
     $buttonExists = $script:FormControls.ContainsKey('ToggleButton')
-    $showButton = $false
-    $buttonState = $true
+
+    # booleans determining button state: will set in switch below
+    $showButton = $false # indicates if view toggle button should appear (only relevant when hierarchical)
+    $buttonState = $true # view button's state: $true -> text for in list mode; $false -> text for in tree mode
 
     # == determine view to display == #
 
@@ -4676,6 +4678,9 @@ function Populate-LeftPanel {
 
     # == Build left panel based on view detected == #
 
+    # For each possible view:
+    # 1. Populate the navigation control (TreeView, ListBox)
+    # 2. Set booleans ($showButton, $buttonState)
     switch ($view) {
         "tree" {
             Populate-TreeView
