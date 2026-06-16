@@ -3192,7 +3192,7 @@ function Update-ButtonsForGroup {
         $btn = New-Object System.Windows.Forms.Button
         $btn.Text = $jobName
         $btn.Height = $UI_Button_Height
-        $btn.Width = $newPanel.Width - $UI_Button_Width_Offset
+        # Width will be set after panel is added and visible
         $btn.TextAlign = "MiddleLeft"
         $btn.FlatStyle = "Flat"
         $btn.Margin = New-Object System.Windows.Forms.Padding($UI_Button_Margin)
@@ -3271,6 +3271,20 @@ function Update-ButtonsForGroup {
     # Update global references
     $script:FormControls.ButtonPanel = $newPanel
     $script:JobButtons = $newJobButtons
+
+    # Add resize handler to adjust button widths dynamically when panel resizes
+    $newPanel.Add_Resize({
+        $currentPanel = $this
+        $newWidth = $currentPanel.ClientSize.Width - $UI_Button_Width_Offset
+        if ($newWidth -gt 0) {
+            foreach ($btn in $script:JobButtons.Values) {
+                $btn.Width = $newWidth
+            }
+
+            $currentPanel.AutoScrollMinSize = New-Object System.Drawing.Size(0, 0)
+            $currentPanel.PerformLayout()
+        }
+    })
 
     # Adjust button widths after panel is added (now it has a Width)
     foreach ($btn in $script:JobButtons.Values) {
@@ -4533,6 +4547,7 @@ function Build-GUI {
 
     # Button flow panel (scrollable)
     $buttonPanel = New-Object System.Windows.Forms.FlowLayoutPanel
+    $buttonPanel.AutoScrollMinSize = New-Object System.Drawing.Size(0, 0)
     $buttonPanel.Dock = "Fill"
     $buttonPanel.FlowDirection = "TopDown"
     $buttonPanel.WrapContents = $false
