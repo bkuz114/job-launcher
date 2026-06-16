@@ -2600,7 +2600,7 @@ function Invoke-Job {
     If no job is running, the function returns immediately with a warning message.
 #>
 function Stop-CurrentJob {
-    $UI_Color_Background = Get-ThemeColor -PropertyName "form_background" 
+    $UI_Color_StatusText = Get-ThemeColor -PropertyName "status_text"
 
     $script:KillRequested = $true
 
@@ -2640,7 +2640,7 @@ function Stop-CurrentJob {
         $script:CurrentRunningJob = $null
         $script:KillRequested = $false
         Update-ButtonStates -Running $false
-        Update-Status "Ready" $UI_Color_Background
+        Update-Status "Ready" $UI_Color_StatusText
         return
     }
 
@@ -2672,7 +2672,7 @@ function Stop-CurrentJob {
         $script:CurrentRunningJob = $null
         $script:KillRequested = $false
         Update-ButtonStates -Running $false
-        Update-Status "Ready" $UI_Color_Background
+        Update-Status "Ready" $UI_Color_StatusText
     }
 }
 
@@ -3214,7 +3214,7 @@ function Update-ButtonsForGroup {
         $btn.Add_Click({
             $UI_Color_StatusOk = Get-ThemeColor -PropertyName "status_ok" 
             $UI_Color_StatusError = Get-ThemeColor -PropertyName "status_error" 
-            $UI_Color_Background = Get-ThemeColor -PropertyName "form_background"
+            $UI_Color_StatusText = Get-ThemeColor -PropertyName "status_text"
 
             $buttonRef = $this
 
@@ -3243,7 +3243,7 @@ function Update-ButtonsForGroup {
             # Re-enable all job buttons
             Write-Log -LogPath $script:LogFile -Text "button click handler: About to re-enable job buttons (kill button should disable)" -Level "DEBUG"
             Update-ButtonStates -Running $false
-            Update-Status "Ready" $UI_Color_Background
+            Update-Status "Ready" $UI_Color_StatusText
         })
 
         $newPanel.Controls.Add($btn)
@@ -4587,6 +4587,7 @@ function Build-GUI {
     $statusStrip.Dock = "Bottom"
     $statusLabel = New-Object System.Windows.Forms.ToolStripStatusLabel
     $statusLabel.Text = "Ready"
+    $null = $statusStrip.Items.Add($statusLabel)
 
     # =========================================================================
     # ASSEMBLE THE FORM
