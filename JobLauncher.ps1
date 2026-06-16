@@ -23,6 +23,9 @@ Set-StrictMode -Version Latest
 # Default error action: Stop makes try/catch work predictably
 $ErrorActionPreference = 'Stop'
 
+# App name
+$script:AppTitle = "Job Launcher"
+
 # Marker to appear in dropdowns
 $DropdownMarker = "✓ "
 
@@ -4483,7 +4486,6 @@ function Create-MenuStrip {
 function Build-GUI {
     # --- Main Form ---
     $form = New-Object System.Windows.Forms.Form
-    $form.Text = "Job Launcher"
     $form.Width = $UI_Window_Width
     $form.Height = $UI_Window_Height
     $form.StartPosition = "CenterScreen"
@@ -4495,6 +4497,9 @@ function Build-GUI {
     } else {
         Write-Log -LogPath $script:LogFile -Text "App icon not found at $AppIcon" -Level "WARN"
     }
+
+    # --- Set initial title ---
+    Set-WindowTitle -Form $form -Title $script:AppTitle
 
     # =========================================================================
     # ROOT TABLE LAYOUT (2 rows: toolbar, content)
@@ -4749,6 +4754,32 @@ function Populate-LeftPanel {
 # =============================================================================
 # GENERAL HELPER FUNCTIONS
 # =============================================================================
+
+<#
+.SYNOPSIS
+    Sets the main window title.
+.DESCRIPTION
+    Updates the form's Text property to the specified string.
+    Does not add or modify any formatting.
+.PARAMETER Form
+    The main form control. Must not be null.
+.PARAMETER Title
+    The title text to set.
+#>
+function Set-WindowTitle {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Windows.Forms.Form]$Form,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Title
+    )
+
+    if (-not $Form) { throw "Set-WindowTitle: Form cannot be null" }
+    if ([string]::IsNullOrWhiteSpace($Title)) { throw "Set-WindowTitle: Title cannot be null or empty" }
+
+    $Form.Text = $Title
+}
 
 <#
 .SYNOPSIS
