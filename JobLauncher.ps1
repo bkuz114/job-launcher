@@ -113,6 +113,11 @@ $UI_LeftPanel_Width = 180
 $UI_Button_Height = 35
 $UI_Button_Margin = 4
 $UI_Output_Height = 200
+# Pixels to reduce job button width by so that they remain in
+# right panel viewport.
+# Note: using padding on parent FlowLayoutPanel with AutoScroll
+# was unreliable, hence the explicit offset.
+$UI_Button_Width_Offset = 20
 
 # --- Behavior ---
 $UI_ShowKillPromptOnClose = $true
@@ -3187,7 +3192,7 @@ function Update-ButtonsForGroup {
         $btn = New-Object System.Windows.Forms.Button
         $btn.Text = $jobName
         $btn.Height = $UI_Button_Height
-        $btn.Width = $newPanel.Width - 20
+        $btn.Width = $newPanel.Width - $UI_Button_Width_Offset
         $btn.TextAlign = "MiddleLeft"
         $btn.FlatStyle = "Flat"
         $btn.Margin = New-Object System.Windows.Forms.Padding($UI_Button_Margin)
@@ -3269,7 +3274,7 @@ function Update-ButtonsForGroup {
 
     # Adjust button widths after panel is added (now it has a Width)
     foreach ($btn in $script:JobButtons.Values) {
-        $btn.Width = $newPanel.Width - 20
+        $btn.Width = $newPanel.Width - $UI_Button_Width_Offset
     }
 
     # Apply current theme colors to the new buttons
