@@ -3175,7 +3175,7 @@ function Update-ButtonsForGroup {
     $newPanel = New-Object System.Windows.Forms.FlowLayoutPanel
     $newPanel.Dock = "Fill"
     $newPanel.FlowDirection = "TopDown"
-    $newPanel.WrapContents = $true
+    $newPanel.WrapContents = $false
     $newPanel.AutoScroll = $true
     $newPanel.Padding = New-Object System.Windows.Forms.Padding(5)
     $newPanel.Visible = $false  # hidden until fully built
@@ -4535,7 +4535,7 @@ function Build-GUI {
     $buttonPanel = New-Object System.Windows.Forms.FlowLayoutPanel
     $buttonPanel.Dock = "Fill"
     $buttonPanel.FlowDirection = "TopDown"
-    $buttonPanel.WrapContents = $true
+    $buttonPanel.WrapContents = $false
     $buttonPanel.AutoScroll = $true
     $buttonPanel.Padding = New-Object System.Windows.Forms.Padding(5)
     $null = $rightPanel.Controls.Add($buttonPanel, 0, 0)
