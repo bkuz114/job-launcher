@@ -29,13 +29,18 @@ $script:AppTitle = "Job Launcher"
 # Marker to appear in dropdowns
 $DropdownMarker = "✓ "
 
+$script:FormControls = $null
+
+$script:KillRequested = $false
+
+# =============================================================================
+# THEME MANAGEMENT
+# =============================================================================
+
 # Will hold hashtable from $Script:Themes
 $script:CurrentTheme = $null
 $script:CurrentThemePalette = $null
 
-$script:FormControls = $null
-
-$script:KillRequested = $false
 # Used as a hack to programatically set the theme dropdown
 # without triggering a change event (which would then trigger
 # a user override which will theme updates from group/category
