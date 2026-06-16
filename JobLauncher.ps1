@@ -4019,6 +4019,9 @@ function Set-JobConfig {
         Clear-ToggleButton -Button $script:FormControls.ToggleButton
     }
 
+    # set Window title
+    Set-WindowTitle -Form $script:FormControls.Form -Title "$script:AppTitle - $ConfigName"
+
     # Reset UI-dependent globals
     $script:CurrentItem = $null
     $script:CurrentDisplayedGroup = $null
