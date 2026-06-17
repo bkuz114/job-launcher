@@ -3434,17 +3434,14 @@ function Measure-ListBoxMaxWidth {
     Requires $script:NavigationItems to be populated (by Load-FlatConfig).
     Requires $script:FormControls.LeftPanel to exist (created in Build-GUI).
 #>
-function Populate-FlatList {
+function Build-FlatList {
 
     $listBox = New-Object System.Windows.Forms.ListBox
     $listBox.Dock = "Fill"
     $listBox.Font = New-Object System.Drawing.Font($UI_Font_Family, $UI_Font_Size_Normal)
     $listBox.IntegralHeight = $false
-    $null = $script:FormControls.LeftPanel.Controls.Add($listBox)
-    $script:FormControls.ListBox = $listBox
 
     # Populate ListBox
-    $script:FormControls.ListBox.Items.Clear()
     foreach ($item in $script:NavigationItems) {
         # skip categories; only build groups
         if ($item.Type -eq "group") {
@@ -3454,12 +3451,12 @@ function Populate-FlatList {
             # Initialize-ListBox to create the ListBox, the Add_Draw event
             # screwed up width and height, and none of it was needed for
             # the flat case anyway.
-            $null = $script:FormControls.ListBox.Items.Add($item)
+            $null = $listBox.Items.Add($item)
         }
     }
 
     # Bind selection change event
-    $script:FormControls.ListBox.Add_SelectedIndexChanged({
+    $listBox.Add_SelectedIndexChanged({
         if ($script:FormControls.ListBox.SelectedItem) {
             $selectedIndex = $script:FormControls.ListBox.SelectedIndex
             $selectedGroup = $script:FormControls.ListBox.Items[$selectedIndex]
@@ -3467,11 +3464,7 @@ function Populate-FlatList {
         }
     })
 
-    # Update width of left panel appropriately
-    $maxWidth = Measure-ListBoxMaxWidth -ListBox $listBox
-    if ($script:FormControls.SplitContainer) {
-        $script:FormControls.SplitContainer.SplitterDistance = $maxWidth
-    }
+    return $listBox
 }
 
 <#
@@ -3490,17 +3483,15 @@ function Populate-FlatList {
     Requires $script:FormControls.TreeView to exist (created by Initialize-CategoryTreeView).
     Requires $script:FormControls.SplitContainer for auto-width adjustment.
 #>
-function Populate-TreeView {
+function Build-TreeView {
 
     # throw error if now hierarchical
     if (-not $script:HasCategories) {
-        throw "Populate-TreeView: No categories in JSON -- can't populate tree view"
+        throw "Build-TreeView: No categories in JSON -- can't populate tree view"
     }
 
     # Create TreeView (to hold groups) using dedicated function
     $treeView = Initialize-CategoryTreeView
-    $null = $script:FormControls.LeftPanel.Controls.Add($treeView)
-    $script:FormControls.TreeView = $treeView
 
     # Build TreeView nodes from $script:NavigationItems
     foreach ($item in $script:NavigationItems) {
@@ -3529,12 +3520,6 @@ function Populate-TreeView {
     # Expand all categories by default
     $treeView.ExpandAll()
 
-    # Auto-size left panel width
-    $maxWidth = Measure-TreeViewMaxWidth -TreeView $treeView
-    if ($script:FormControls.SplitContainer) {
-        $script:FormControls.SplitContainer.SplitterDistance = $maxWidth
-    }
-
     # Selection event
     $treeView.Add_AfterSelect({
         param($sender, $e)
@@ -3544,6 +3529,8 @@ function Populate-TreeView {
             Set-Item -Item $node.Tag
         }
     })
+
+    return $treeView
 }
 
 <#
@@ -3567,17 +3554,15 @@ function Populate-TreeView {
     Requires $script:FormControls.LeftPanel to exist (created in Build-GUI).
     Creates $script:FormControls.ListBox and stores it for later access.
 #>
-function Populate-ListWithDividers {
+function Build-ListWithDividers {
 
     # throw error if now hierarchical
     if (-not $script:HasCategories) {
-        throw "Populate-ListWithDividers: No categories in JSON -- can't populate list with dividers"
+        throw "Build-ListWithDividers: No categories in JSON -- can't populate list with dividers"
     }
 
     # Create ListBox using dedicated function
     $listBox = Initialize-ListBox
-    $null = $script:FormControls.LeftPanel.Controls.Add($listBox)
-    $script:FormControls.ListBox = $listBox
 
     # Populate items from $script:NavigationItems
     foreach ($item in $script:NavigationItems) {
@@ -3653,11 +3638,7 @@ function Populate-ListWithDividers {
         }
     })
 
-    # Update width of left panel appropriately
-    $maxWidth = Measure-ListBoxMaxWidth -ListBox $listBox
-    if ($script:FormControls.SplitContainer) {
-        $script:FormControls.SplitContainer.SplitterDistance = $maxWidth
-    }
+    return $listBox
 }
 
 <#
@@ -4664,6 +4645,18 @@ function Build-GUI {
 .NOTES
     This function assumes $script:FormControls.LeftPanel already exists as
     the container panel created in Build-GUI.
+
+    IMPORTANT: The left panel swap must follow this exact sequence:
+        1. Build controls off-screen
+        2. Add controls to new container
+        3. Swap the container (SuspendLayout, Remove, Add, ResumeLayout)
+        4. Set SplitterDistance AFTER the swap is complete
+
+    - Do NOT set SplitterDistance before the swap.
+    - Do NOT set the navigation control's Width manually.
+    Either of these will cause a horizontal scrollbar in TreeView mode.
+    For the full explanation (including why this only affects TreeView mode and
+    why manual width assignment fails), see GitHub Issue #21.
 #>
 function Populate-LeftPanel {
 
@@ -4682,7 +4675,6 @@ function Populate-LeftPanel {
     # == determine view to display == #
 
     # set default value
-
     $view = "flat"
     if ($script:HasCategories) {
         # if has categories, default to hierarchical list
@@ -4706,29 +4698,65 @@ function Populate-LeftPanel {
         $view = "flat"
     }
 
-    # == Clear existing left panel controls == #
+    # == save reference to old container == #
 
-    Clear-LeftPanel
+    $oldPanel = $script:FormControls.LeftPanel
+    $parent = $oldPanel.Parent
 
-    # == Build left panel based on view detected == #
+    # == Build new left panel content off-screen == #
+
+    # Create new container panel
+    $newContainer = New-Object System.Windows.Forms.Panel
+    $newContainer.Dock = "Fill"
+    $newContainer.Visible = $false  # hidden until fully built
+
+    # the actual control that will go in the left panel (TreeView, ListBox, etc.)
+    $newNavigationControl = $null
+    # the view toggle button (only relevant when $showButton is $true)
+    $newToggleButton = $null
 
     # For each possible view:
-    # 1. Populate the navigation control (TreeView, ListBox)
+    # 1. Create the control (TreeView, ListBox)
     # 2. Set booleans ($showButton, $buttonState)
+    # 3. Calculate left panel width
+    # 4. Set $script globals (must do before Initialize-LeftPanel;
+    #    and Initialie-LeftPanel must be called before the swap
+    #    else will have flash of content
     switch ($view) {
         "tree" {
-            Populate-TreeView
+            # create the new left panel
+            $newNavigationControl = Build-TreeView
+            # set button booleans
             $showButton = $true
             $buttonState = $true
+            # calculate width
+            $splitterWidth = (Measure-TreeViewMaxWidth -TreeView $newNavigationControl)
+            # set globals
+            $script:FormControls.TreeView = $newNavigationControl
+            $script:FormControls.ListBox = $null
         }
         "list" {
-            Populate-ListWithDividers
+            # create the new left panel
+            $newNavigationControl = Build-ListWithDividers
+            # set button booleans
             $showButton = $true
             $buttonState = $false
+            # calculate width
+            $splitterWidth = Measure-ListBoxMaxWidth -ListBox $newNavigationControl
+            # set globals
+            $script:FormControls.ListBox = $newNavigationControl
+            $script:FormControls.TreeView = $null
         }
         "flat" {
-            Populate-FlatList
+            # create the new left panel
+            $newNavigationControl = Build-FlatList
+            # set button booleans
             $showButton = $false
+            # calculate width
+            $splitterWidth = Measure-ListBoxMaxWidth -ListBox $newNavigationControl
+            # set globals
+            $script:FormControls.ListBox = $newNavigationControl
+            $script:FormControls.TreeView = $null
         }
         default {
             # defensive only; should not get here.
@@ -4736,27 +4764,50 @@ function Populate-LeftPanel {
         }
     }
 
-    # == Create and/or update hierarchical view button == #
+    # == Create new hierarchical view button == #
 
     if ($showButton) {
-        # Create toggle button if it doesn't exist
-        if (-not $buttonExists -or -not $script:FormControls.ToggleButton) {
-            $toggleButton = Create-ToggleButton
-            $null = $script:FormControls.LeftPanel.Controls.Add($toggleButton)
-            $script:FormControls.ToggleButton = $toggleButton
-        }
-        # update button only if hierarchical view is present and state is null
-        if ($script:FormControls.ToggleButton -and $script:FormControls.ToggleButton.Tag -eq $null) {
-            Set-ToggleButton -Button $script:FormControls.ToggleButton -State $buttonState
-        }
+        $newToggleButton = Create-ToggleButton
+        Set-ToggleButton -Button $newToggleButton -State $buttonState
+        Set-ButtonVisibility -Button $newToggleButton -Visible $true
     }
 
-    # update visibility if button exists (Set-ButtonVisibility will fail if -Button is $null)
-    if ($script:FormControls.ContainsKey("ToggleButton") -and $script:FormControls.ToggleButton) {
-        Set-ButtonVisibility -Button $script:FormControls.ToggleButton -Visible $showButton
+    # == build the new container with nav control + button == #
+
+    if ($newToggleButton) {
+        $null = $newContainer.Controls.Add($newToggleButton)
     }
+    $null = $newContainer.Controls.Add($newNavigationControl)
+
+    # == Update global references to point to new controls == #
+
+    $script:FormControls.LeftPanel = $newContainer
+    if ($newToggleButton) {
+        $script:FormControls.ToggleButton = $newToggleButton
+    }
+
+    # == Initialize left panel (select group to display) == #
+    # Note: must update globals above first.
 
     Initialize-LeftPanel -Item $currSelectedItem
+
+    # == Atomic swap: replace old panel with new off-screen panel == #
+
+    $parent.SuspendLayout()
+    $parent.Controls.Remove($oldPanel)
+    $oldPanel.Dispose()
+    $newContainer.Dock = "Fill"
+    $null = $parent.Controls.Add($newContainer)
+    $parent.ResumeLayout()
+    $newContainer.Visible = $true
+
+    # == set final splitter distance == #
+
+    if ($script:FormControls.SplitContainer) {
+        $script:FormControls.SplitContainer.SplitterDistance = $splitterWidth
+    }
+
+    Write-Log -LogPath $script:LogFile -Text "Left panel swap completed successfully" -Level "DEBUG"
 }
 
 # =============================================================================
