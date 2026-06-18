@@ -3376,7 +3376,7 @@ function Measure-TreeViewMaxWidth {
     }
 
     # account for tree structure to left of text starting
-    return $maxWidth + 35
+    return $maxWidth + 40
 }
 
 <#
